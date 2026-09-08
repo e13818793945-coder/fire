@@ -59,12 +59,34 @@
   <div class="block-head"><div><h2>已分配孤儿单客户</h2></div></div>
   <div class="table-wrap">
     <table class="dtable">
-      <thead><tr><th>客户编码</th><th>分配给</th><th>录入时间</th></tr></thead>
+      <thead><tr><th>客户编码</th><th>分层</th><th>分配给</th><th>录入时间</th><th>编辑 / 删除</th></tr></thead>
       <tbody>
       {% for c in orphan_clients %}
-        <tr><td class="cell-name">{{ c.name }}</td><td>{{ c.agent_name }}</td><td class="num">{{ c.created_at[:10] }}</td></tr>
+        <tr>
+          <td class="cell-name">{{ c.name }}</td>
+          <td><span class="badge badge-off">{{ c.tier }} 类</span></td>
+          <td>{{ c.agent_name }}</td>
+          <td class="num">{{ c.created_at[:10] }}</td>
+          <td>
+            <form method="post" action="{{ url_for('pm_orphan_client_edit', client_id=c.id) }}" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+              <input type="text" name="name" value="{{ c.name }}" required style="width:120px;">
+              <select name="tier" style="width:72px;">
+                <option value="A" {% if c.tier=='A' %}selected{% endif %}>A 类</option>
+                <option value="B" {% if c.tier=='B' %}selected{% endif %}>B 类</option>
+                <option value="C" {% if c.tier=='C' %}selected{% endif %}>C 类</option>
+              </select>
+              <select name="agent_id" style="width:110px;">
+                {% for a in agents %}<option value="{{ a.id }}" {% if a.id==c.agent_id %}selected{% endif %}>{{ a.display_name }}</option>{% endfor %}
+              </select>
+              <button class="btn btn-sm" type="submit">保存</button>
+            </form>
+            <form method="post" action="{{ url_for('pm_orphan_client_delete', client_id=c.id) }}" style="margin-top:6px;" onsubmit="return confirm('确认删除客户「{{ c.name }}」？此操作不可恢复，会同时删除已生成的 KYC 报告。');">
+              <button class="btn btn-sm" type="submit">删除</button>
+            </form>
+          </td>
+        </tr>
       {% else %}
-        <tr><td colspan="3" class="empty-note">暂无已分配的孤儿单客户</td></tr>
+        <tr><td colspan="5" class="empty-note">暂无已分配的孤儿单客户</td></tr>
       {% endfor %}
       </tbody>
     </table>

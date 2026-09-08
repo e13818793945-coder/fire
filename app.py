@@ -578,6 +578,54 @@ def pm_orphan_pool_delete(pool_id):
     return redirect(url_for("pm_orphan"))
 
 
+@app.route("/pm/orphan/client/<int:client_id>/edit", methods=["POST"])
+@role_required("pm")
+def pm_orphan_client_edit(client_id):
+    db = get_db()
+    client = db.execute("SELECT * FROM clients WHERE id=? AND source='孤儿单'", (client_id,)).fetchone()
+    if client is None:
+        abort(404)
+    f = request.form
+    name = f.get("name", "").strip()
+    tier = f.get("tier", "B")
+    agent_id = f.get("agent_id", "")
+    if not name or not agent_id:
+        flash("请填写客户编码并选择代理人", "error")
+        return redirect(url_for("pm_orphan"))
+    if tier not in TIER_CHOICES:
+        tier = "B"
+    dup = db.execute("SELECT id FROM clients WHERE name=? AND id!=?", (name, client_id)).fetchone()
+    if dup:
+        flash(f"客户编码「{name}」已被其他客户占用，未保存", "error")
+        return redirect(url_for("pm_orphan"))
+    db.execute(
+        "UPDATE clients SET name=?, tier=?, agent_id=?, updated_at=? WHERE id=?",
+        (name, tier, agent_id, now_iso(), client_id),
+    )
+    updated = db.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+    db.execute("DELETE FROM kyc_reports WHERE client_id=?", (client_id,))
+    db.execute("INSERT INTO kyc_reports (client_id, content, generated_at) VALUES (?,?,?)", (client_id, generate_kyc_text(updated), now_iso()))
+    db.commit()
+    log_action(g.user, "编辑孤儿单客户", f"{client['name']} -> {name}")
+    flash(f"「{name}」已更新，KYC 报告已重新生成", "ok")
+    return redirect(url_for("pm_orphan"))
+
+
+@app.route("/pm/orphan/client/<int:client_id>/delete", methods=["POST"])
+@role_required("pm")
+def pm_orphan_client_delete(client_id):
+    db = get_db()
+    client = db.execute("SELECT * FROM clients WHERE id=? AND source='孤儿单'", (client_id,)).fetchone()
+    if client is None:
+        abort(404)
+    db.execute("DELETE FROM kyc_reports WHERE client_id=?", (client_id,))
+    db.execute("DELETE FROM clients WHERE id=?", (client_id,))
+    db.commit()
+    log_action(g.user, "删除孤儿单客户", client["name"])
+    flash(f"已删除客户「{client['name']}」及其 KYC 报告", "ok")
+    return redirect(url_for("pm_orphan"))
+
+
 @app.route("/pm/periods")
 @role_required("pm")
 def pm_periods():
