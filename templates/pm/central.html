@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}集中辅导会录入 · 精英顾问陪跑系统{% endblock %}
+{% block page_title %}项目经理工作台{% endblock %}
+{% block page_sub %}分配孤儿单、录入各环节报告与出勤数据{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="block-head"><div><h2>线上集中辅导会 · 总结报告录入</h2><p class="block-desc">共 3 场，逐场录入总结与出勤</p></div></div>
+
+  {% for s in sessions %}
+  <div class="card card-pad" style="margin-bottom:14px;">
+    <form method="post" action="{{ url_for('pm_central_update', session_id=s.id) }}">
+      <div class="form-grid">
+        <div><label class="flabel">第 {{ s.seq }} 场 · 日期</label><input type="text" name="date" value="{{ s.date }}" placeholder="如 2026-09-18"></div>
+        <div><label class="flabel">主题</label><input type="text" name="title" value="{{ s.title }}" placeholder="如 建联与客户分层方法论"></div>
+        <div class="full"><label class="flabel">总结报告</label><textarea name="summary" placeholder="录入本场总结报告内容…">{{ s.summary }}</textarea></div>
+      </div>
+      <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);">
+          <input type="checkbox" name="published" {{ 'checked' if s.published else '' }} style="width:auto;"> 已发布给代理人 / 保司内勤查看
+        </label>
+        <button class="btn btn-primary btn-sm" type="submit">保存</button>
+      </div>
+    </form>
+
+    {% if agents %}
+    <div style="height:14px;"></div>
+    <div class="block-desc" style="margin-bottom:8px;">出勤情况（点击切换）</div>
+    <div class="attend-grid" style="grid-template-columns:140px repeat({{ agents|length }}, 1fr);">
+      <div class="attend-cell attend-head" style="text-align:left;padding-left:12px;">代理人</div>
+      {% for a in agents %}<div class="attend-cell attend-head">{{ a.display_name }}</div>{% endfor %}
+      <div class="attend-name">出勤</div>
+      {% for a in agents %}
+        <form method="post" action="{{ url_for('pm_central_attendance_toggle', session_id=s.id, agent_id=a.id) }}" class="attend-cell">
+          <button type="submit"><span class="dotmark {{ 'on' if att.get((s.id, a.id)) else '' }}"></span></button>
+        </form>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}

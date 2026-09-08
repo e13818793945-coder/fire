@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}操作日志 · 精英顾问陪跑系统{% endblock %}
+{% block page_title %}系统管理{% endblock %}
+{% block page_sub %}角色权限与系统配置{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="block-head"><div><h2>操作日志</h2><p class="block-desc">最近 200 条系统操作记录</p></div></div>
+  <div class="table-wrap">
+    <table class="dtable">
+      <thead><tr><th>时间</th><th>操作人</th><th>操作</th><th>详情</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr><td class="num">{{ r.created_at }}</td><td>{{ r.username }}</td><td>{{ r.action }}</td><td class="cell-sub">{{ r.detail }}</td></tr>
+      {% else %}
+        <tr><td colspan="4" class="empty-note">暂无记录</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

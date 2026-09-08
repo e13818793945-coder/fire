@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}孤儿单分配 · 精英顾问陪跑系统{% endblock %}
+{% block page_title %}项目经理工作台{% endblock %}
+{% block page_sub %}分配孤儿单、录入各环节报告与出勤数据{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="block-head"><div><h2>孤儿单客户分配</h2><p class="block-desc">从保司获取名单后，逐一录入并分配给代理人</p></div></div>
+  <div class="table-wrap">
+    <table class="dtable">
+      <thead><tr><th>客户姓名</th><th>分配给</th><th>录入时间</th></tr></thead>
+      <tbody>
+      {% for c in orphan_clients %}
+        <tr><td class="cell-name">{{ c.name }}</td><td>{{ c.agent_name }}</td><td class="num">{{ c.created_at[:10] }}</td></tr>
+      {% else %}
+        <tr><td colspan="3" class="empty-note">暂无孤儿单客户</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="block">
+  <div class="block-head"><div><h2>录入并分配</h2></div></div>
+  <div class="card card-pad">
+    <form method="post" action="{{ url_for('pm_orphan_new') }}">
+      <div class="form-grid">
+        <div><label class="flabel">客户姓名</label><input type="text" name="name" required></div>
+        <div><label class="flabel">联系电话</label><input type="text" name="phone"></div>
+        <div>
+          <label class="flabel">分配给代理人</label>
+          <select name="agent_id" required>
+            <option value="">请选择</option>
+            {% for a in agents %}<option value="{{ a.id }}">{{ a.display_name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="flabel">分层</label>
+          <select name="tier"><option value="A">A 类</option><option value="B" selected>B 类</option><option value="C">C 类</option></select>
+        </div>
+      </div>
+      <div style="margin-top:14px;display:flex;justify-content:flex-end;">
+        <button class="btn btn-primary" type="submit">分配</button>
+      </div>
+    </form>
+  </div>
+  {% if not agents %}<p class="empty-note">请先在系统管理中创建代理人账号。</p>{% endif %}
+</section>
+{% endblock %}

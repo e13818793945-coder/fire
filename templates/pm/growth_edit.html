@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ agent.display_name }} · 成长报告{% endblock %}
+{% block page_title %}成长报告编辑{% endblock %}
+{% block page_sub %}<a class="btn btn-sm" href="{{ url_for('pm_growth') }}">← 返回列表</a>{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="block-head"><div><h2>{{ agent.display_name }}</h2></div></div>
+  <div class="card card-pad">
+    <form method="post" action="{{ url_for('pm_growth_save', agent_id=agent.id) }}">
+      <div class="form-grid">
+        {% for d in dims %}
+          <div>
+            <label class="flabel">{{ d }}（0-100）</label>
+            <input type="text" name="metric_{{ d }}" value="{{ metrics.get(d, 0) }}">
+          </div>
+        {% endfor %}
+        <div class="full"><label class="flabel">评语</label><textarea name="narrative" placeholder="教练与项目经理共同评定的文字评语…">{{ report.narrative if report else '' }}</textarea></div>
+      </div>
+      <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);">
+          <input type="checkbox" name="published" {{ 'checked' if report and report.status=='published' else '' }} style="width:auto;"> 发布给该代理人与保司内勤查看
+        </label>
+        <button class="btn btn-primary" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}

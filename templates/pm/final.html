@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}结业报告录入 · 精英顾问陪跑系统{% endblock %}
+{% block page_title %}项目经理工作台{% endblock %}
+{% block page_sub %}分配孤儿单、录入各环节报告与出勤数据{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="block-head"><div><h2>整体课程结业报告</h2><p class="block-desc">结营时向保司内勤同步的总结报告</p></div></div>
+  <div class="card card-pad">
+    <form method="post" action="{{ url_for('pm_final_save') }}">
+      <textarea style="min-height:160px;" name="content" placeholder="录入结业报告：整体出勤、经营动态完成度、业绩转化、典型案例…">{{ report.content if report else '' }}</textarea>
+      <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);">
+          <input type="checkbox" name="published" {{ 'checked' if report and report.published else '' }} style="width:auto;"> 发布给保司内勤查看
+        </label>
+        <button class="btn btn-primary" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
+  {% if report and report.updated_at %}<p class="cell-sub" style="margin-top:10px;">最近更新 {{ report.updated_at }}</p>{% endif %}
+</section>
+{% endblock %}

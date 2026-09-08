@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}我的客户 · 精英顾问陪跑系统{% endblock %}
+{% block page_title %}代理人工作台{% endblock %}
+{% block page_sub %}录入客户、提交经营动态、查看反馈与各类报告{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="block-head"><div><h2>我的客户</h2><p class="block-desc">录入并维护自有存量客户信息；孤儿单客户由项目经理分配后会自动出现在此列表</p></div></div>
+  <div class="table-wrap">
+    <table class="dtable">
+      <thead><tr><th>客户姓名</th><th>分层</th><th>来源</th><th>最近更新</th><th></th></tr></thead>
+      <tbody>
+      {% for c in clients %}
+        <tr>
+          <td class="cell-name">{{ c.name }}</td>
+          <td><span class="badge badge-off">{{ c.tier }} 类</span></td>
+          <td>{{ c.source }}</td>
+          <td class="num">{{ c.updated_at[:10] }}</td>
+          <td><a class="btn btn-sm" href="{{ url_for('agent_client_detail', client_id=c.id) }}">查看 KYC</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="empty-note">暂无客户，使用下方表单录入第一位客户</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="block">
+  <div class="block-head"><div><h2>录入新客户</h2><p class="block-desc">保存后系统会自动生成该客户的 KYC 报告</p></div></div>
+  <div class="card card-pad">
+    <form method="post" action="{{ url_for('agent_clients_new') }}">
+      <div class="form-grid">
+        <div><label class="flabel">客户姓名</label><input type="text" name="name" required></div>
+        <div><label class="flabel">联系电话</label><input type="text" name="phone"></div>
+        <div>
+          <label class="flabel">分层</label>
+          <select name="tier"><option value="A">A 类（重点）</option><option value="B" selected>B 类（稳定）</option><option value="C">C 类（培育）</option></select>
+        </div>
+        <div>
+          <label class="flabel">年龄区间</label>
+          <select name="age_range"><option value="">未选择</option><option>25以下</option><option>25-35</option><option>35-45</option><option>45-55</option><option>55以上</option></select>
+        </div>
+        <div>
+          <label class="flabel">家庭结构</label>
+          <select name="family_status"><option value="">未选择</option><option>单身</option><option>已婚无子女</option><option>已婚有子女</option></select>
+        </div>
+        <div>
+          <label class="flabel">收入/资产区间</label>
+          <select name="income_range"><option value="">未选择</option><option value="高">高</option><option value="中">中</option><option value="低">低</option></select>
+        </div>
+        <div class="full"><label class="flabel">已有保障</label><input type="text" name="existing_policies" placeholder="例如：重疾险 1 份、医疗险 1 份"></div>
+        <div class="full"><label class="flabel">风险与关注点</label><textarea name="risk_notes" placeholder="客户的顾虑、既往沟通要点等"></textarea></div>
+      </div>
+      <div style="margin-top:14px;display:flex;justify-content:flex-end;">
+        <button class="btn btn-primary" type="submit">+ 录入新客户</button>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}

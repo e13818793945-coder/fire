@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}双周经营动态 · 精英顾问陪跑系统{% endblock %}
+{% block page_title %}代理人工作台{% endblock %}
+{% block page_sub %}录入客户、提交经营动态、查看反馈与各类报告{% endblock %}
+{% block content %}
+<section class="block">
+  {% if current %}
+    {% set my = my_updates.get(current.id) %}
+    <div class="block-head">
+      <div><h2>本期经营动态提交</h2><p class="block-desc">第 {{ current.seq }} 期 · {{ current.start_date }} 至 {{ current.end_date }}</p></div>
+      {% if my %}<span class="badge badge-done">已提交</span>{% else %}<span class="badge badge-pending">未提交</span>{% endif %}
+    </div>
+    <div class="card card-pad">
+      <form method="post" action="{{ url_for('agent_econ_submit') }}">
+        <textarea name="content" placeholder="记录本期客户经营动态：新增建联、KYC 进展、加保机会…">{{ my.content if my else '' }}</textarea>
+        <div style="margin-top:12px;display:flex;justify-content:flex-end;">
+          <button class="btn btn-primary" type="submit">{{ '更新本期动态' if my else '提交本期动态' }}</button>
+        </div>
+      </form>
+    </div>
+  {% else %}
+    <div class="card"><p class="empty-note" style="padding:16px 20px;">项目经理尚未开启当前周期，请稍后再来提交。</p></div>
+  {% endif %}
+</section>
+
+<section class="block">
+  <div class="block-head"><div><h2>历史提交记录</h2></div></div>
+  <div class="table-wrap">
+    <table class="dtable">
+      <thead><tr><th>期数</th><th>周期</th><th>提交状态</th><th>提交时间</th></tr></thead>
+      <tbody>
+      {% for p in periods %}
+        {% set u = my_updates.get(p.id) %}
+        <tr>
+          <td>第 {{ p.seq }} 期</td>
+          <td class="num">{{ p.start_date }} – {{ p.end_date }}</td>
+          <td>{% if u %}<span class="badge badge-done">已提交</span>{% else %}<span class="badge badge-off">未提交</span>{% endif %}</td>
+          <td class="num">{{ u.submitted_at if u else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

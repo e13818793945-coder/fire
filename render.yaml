@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: coaching-platform
+    runtime: python
+    plan: starter
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -w 2 -b 0.0.0.0:$PORT app:app
+    envVars:
+      - key: COACHING_SECRET_KEY
+        generateValue: true
+      - key: COACHING_DB_PATH
+        value: /var/data/coaching.db
+      - key: COACHING_ADMIN_USER
+        value: admin
+      - key: COACHING_ADMIN_PASS
+        value: p@ssw0rd
+    disk:
+      name: coaching-data
+      mountPath: /var/data
+      sizeGB: 1

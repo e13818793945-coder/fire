@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}经营动态总览 · 精英顾问陪跑系统{% endblock %}
+{% block page_title %}保司内勤视图{% endblock %}
+{% block page_sub %}查看项目执行进度与各类报告（只读）{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="block-head">
+    <div><h2>经营动态提交与反馈总览</h2><p class="block-desc">{% if current %}第 {{ current.seq }} 期 · {{ current.start_date }} 至 {{ current.end_date }}{% else %}尚未开启周期{% endif %}</p></div>
+    <span class="readonly-flag">只读</span>
+  </div>
+  <div class="table-wrap">
+    <table class="dtable">
+      <thead><tr><th>代理人</th><th>提交状态</th><th>教练反馈</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="cell-name">{{ r.agent.display_name }}</td>
+          <td>{% if r.submitted %}<span class="badge badge-done">已提交</span>{% else %}<span class="badge badge-off">未提交</span>{% endif %}</td>
+          <td>{% if r.feedback %}<span class="badge badge-done">已反馈</span>{% else %}<span class="badge badge-pending">未反馈</span>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3" class="empty-note">暂无数据</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

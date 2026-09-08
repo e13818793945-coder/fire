@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}经营动态周期 · 精英顾问陪跑系统{% endblock %}
+{% block page_title %}项目经理工作台{% endblock %}
+{% block page_sub %}分配孤儿单、录入各环节报告与出勤数据{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="block-head"><div><h2>双周经营动态周期</h2><p class="block-desc">代理人只能对「当前周期」提交动态；结束一期后在此开启下一期</p></div></div>
+  <div class="table-wrap">
+    <table class="dtable">
+      <thead><tr><th>期数</th><th>起止日期</th><th>状态</th><th></th></tr></thead>
+      <tbody>
+      {% for p in periods %}
+        <tr>
+          <td>第 {{ p.seq }} 期</td>
+          <td class="num">{{ p.start_date }} – {{ p.end_date }}</td>
+          <td>{% if p.is_current %}<span class="badge badge-done">当前周期</span>{% else %}<span class="badge badge-off">已结束</span>{% endif %}</td>
+          <td>{% if not p.is_current %}<form method="post" action="{{ url_for('pm_periods_set_current', period_id=p.id) }}"><button class="btn btn-sm" type="submit">设为当前</button></form>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="block">
+  <div class="block-head"><div><h2>开启新周期</h2></div></div>
+  <div class="card card-pad">
+    <form method="post" action="{{ url_for('pm_periods_new') }}">
+      <div class="form-grid">
+        <div><label class="flabel">开始日期</label><input type="date" name="start_date" required></div>
+        <div><label class="flabel">结束日期</label><input type="date" name="end_date" required></div>
+      </div>
+      <div style="margin-top:14px;display:flex;justify-content:flex-end;">
+        <button class="btn btn-primary" type="submit">开启新周期</button>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}

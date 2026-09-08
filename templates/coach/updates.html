@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}经营动态反馈 · 精英顾问陪跑系统{% endblock %}
+{% block page_title %}教练工作台{% endblock %}
+{% block page_sub %}查看学员经营动态，提交诊断反馈{% endblock %}
+{% block content %}
+<section class="block">
+  {% if current %}
+  <div class="block-head">
+    <div><h2>待反馈的经营动态</h2><p class="block-desc">第 {{ current.seq }} 期 · {{ current.start_date }} 至 {{ current.end_date }}</p></div>
+  </div>
+  {% for r in rows %}
+    <div class="card card-pad" style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline;">
+        <div style="font-weight:600;font-size:13.5px;">{{ r.agent.display_name }}</div>
+        <div style="display:flex;gap:8px;">
+          {% if r.econ_update %}<span class="badge badge-done">已提交</span>{% else %}<span class="badge badge-off">未提交</span>{% endif %}
+          {% if r.feedback %}<span class="badge badge-done">已反馈</span>{% elif r.econ_update %}<span class="badge badge-pending">待反馈</span>{% endif %}
+        </div>
+      </div>
+      {% if r.econ_update %}
+        <p style="margin:10px 0 0;font-size:13.5px;color:var(--ink-soft);white-space:pre-wrap;">{{ r.econ_update.content }}</p>
+        <form method="post" action="{{ url_for('coach_feedback_submit', update_id=r.econ_update.id) }}" style="margin-top:12px;">
+          <textarea name="content" placeholder="针对本期经营动态给出诊断意见与下一步建议…">{{ r.feedback.content if r.feedback else '' }}</textarea>
+          <div style="margin-top:10px;display:flex;justify-content:flex-end;">
+            <button class="btn btn-primary btn-sm" type="submit">{{ '更新反馈' if r.feedback else '提交反馈' }}</button>
+          </div>
+        </form>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="card"><p class="empty-note" style="padding:16px 20px;">当前尚无代理人账号或经营动态提交。</p></div>
+  {% endfor %}
+  {% else %}
+    <div class="card"><p class="empty-note" style="padding:16px 20px;">项目经理尚未开启当前周期。</p></div>
+  {% endif %}
+</section>
+{% endblock %}

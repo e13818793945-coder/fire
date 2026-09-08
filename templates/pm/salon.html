@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}沙龙陪谈录入 · 精英顾问陪跑系统{% endblock %}
+{% block page_title %}项目经理工作台{% endblock %}
+{% block page_sub %}分配孤儿单、录入各环节报告与出勤数据{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="block-head"><div><h2>沙龙 1&amp;1 陪谈报告录入</h2><p class="block-desc">共 3 场，逐位学员记录陪谈要点</p></div></div>
+
+  {% for s in sessions %}
+  <div class="card card-pad" style="margin-bottom:14px;">
+    <div style="font-weight:600;font-size:13.5px;margin-bottom:10px;">第 {{ s.seq }} 场沙龙 · {{ s.date or '日期待定' }}</div>
+    {% if agents %}
+      <form method="post" action="{{ url_for('pm_salon_save', session_id=s.id) }}">
+        <div class="table-wrap">
+          <table class="dtable">
+            <thead><tr><th style="width:120px;">代理人</th><th>陪谈记录</th><th style="width:80px;">已陪谈</th></tr></thead>
+            <tbody>
+            {% for a in agents %}
+              {% set n = notes.get((s.id, a.id)) %}
+              <tr>
+                <td class="cell-name">{{ a.display_name }}</td>
+                <td><input type="text" name="note_{{ a.id }}" value="{{ n.note if n else '' }}" placeholder="陪谈要点"></td>
+                <td style="text-align:center;"><input type="checkbox" name="present_{{ a.id }}" {{ 'checked' if n and n.present else '' }} style="width:auto;"></td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:12px;display:flex;justify-content:flex-end;">
+          <button class="btn btn-primary btn-sm" type="submit">保存本场记录</button>
+        </div>
+      </form>
+    {% else %}
+      <p class="empty-note">请先在系统管理中创建代理人账号。</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}

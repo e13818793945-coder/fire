@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}盘客辅导情况 · 精英顾问陪跑系统{% endblock %}
+{% block page_title %}保司内勤视图{% endblock %}
+{% block page_sub %}查看项目执行进度与各类报告（只读）{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="block-head"><div><h2>线上盘客辅导 · 报告与参加情况</h2><p class="block-desc">共 6 次</p></div><span class="readonly-flag">只读</span></div>
+
+  {% for s in sessions %}
+    <div class="card card-pad" style="margin-bottom:12px;">
+      <div style="font-weight:600;font-size:13.5px;">第 {{ s.seq }} 次{% if s.focus %} · {{ s.focus }}{% endif %}</div>
+      <div class="cell-sub">{{ s.date or '日期待定' }}</div>
+      {% if s.published %}
+        <p style="margin:10px 0 0;font-size:13.5px;color:var(--ink-soft);">{{ s.content }}</p>
+      {% else %}
+        <p class="cell-sub" style="margin-top:10px;">尚未开展 / 报告未发布</p>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  {% if agents %}
+  <div class="block-desc" style="margin:16px 0 8px;">参加情况</div>
+  <div class="table-wrap">
+  <div class="attend-grid" style="grid-template-columns:140px repeat({{ sessions|length }}, 1fr); min-width:{{ 140 + sessions|length * 60 }}px;">
+    <div class="attend-cell attend-head" style="text-align:left;padding-left:12px;">代理人</div>
+    {% for s in sessions %}<div class="attend-cell attend-head">第{{ s.seq }}次</div>{% endfor %}
+    {% for a in agents %}
+      <div class="attend-name">{{ a.display_name }}</div>
+      {% for s in sessions %}<div class="attend-cell"><span class="dotmark {{ 'on' if att.get((s.id, a.id)) else '' }}"></span></div>{% endfor %}
+    {% endfor %}
+  </div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

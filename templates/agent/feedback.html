@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}教练反馈 · 精英顾问陪跑系统{% endblock %}
+{% block page_title %}代理人工作台{% endblock %}
+{% block page_sub %}录入客户、提交经营动态、查看反馈与各类报告{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="block-head"><div><h2>教练诊断反馈</h2><p class="block-desc">按期查看教练对经营动态的反馈</p></div></div>
+  <div class="table-wrap">
+    <table class="dtable">
+      <thead><tr><th>期数</th><th>反馈状态</th><th>教练</th><th>反馈内容</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td>第 {{ r.period_seq }} 期</td>
+          <td>{% if r.fb_content %}<span class="badge badge-done">已反馈</span>{% else %}<span class="badge badge-pending">待反馈</span>{% endif %}</td>
+          <td>{{ r.coach_name or '—' }}</td>
+          <td>{{ r.fb_content or '—' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="empty-note">暂无提交记录</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

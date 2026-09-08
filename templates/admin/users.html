@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}角色与权限管理 · 精英顾问陪跑系统{% endblock %}
+{% block page_title %}系统管理{% endblock %}
+{% block page_sub %}角色权限与系统配置{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="block-head">
+    <div>
+      <h2>角色与权限管理</h2>
+      <p class="block-desc">为代理人 / 教练 / 项目经理 / 保司内勤创建账号后，对应工作台即可使用</p>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="dtable">
+      <thead><tr><th>姓名</th><th>账号</th><th>角色</th><th>状态</th><th></th></tr></thead>
+      <tbody>
+      {% for u in users %}
+        <tr>
+          <td class="cell-name">{{ u.display_name }}</td>
+          <td>{{ u.username }}</td>
+          <td><span class="badge badge-off">{{ role_labels[u.role] }}</span></td>
+          <td>{% if u.active %}<span class="badge badge-done">已启用</span>{% else %}<span class="badge badge-off">已禁用</span>{% endif %}</td>
+          <td style="display:flex;gap:6px;justify-content:flex-end;">
+            <form class="inline" method="post" action="{{ url_for('admin_users_toggle', user_id=u.id) }}">
+              <button class="btn btn-sm" type="submit">{{ '禁用' if u.active else '启用' }}</button>
+            </form>
+            <details style="display:inline-block;">
+              <summary class="btn btn-sm" style="display:inline-block;cursor:pointer;">重置密码</summary>
+              <form method="post" action="{{ url_for('admin_users_reset_password', user_id=u.id) }}" style="margin-top:8px;display:flex;gap:6px;">
+                <input type="password" name="new_password" placeholder="新密码（至少6位）" style="width:170px;">
+                <button class="btn btn-sm btn-primary" type="submit">确认</button>
+              </form>
+            </details>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="block">
+  <div class="block-head"><div><h2>添加用户</h2><p class="block-desc">设置账号、初始密码与角色</p></div></div>
+  <div class="card card-pad">
+    <form method="post" action="{{ url_for('admin_users_new') }}">
+      <div class="form-grid">
+        <div>
+          <label class="flabel">姓名</label>
+          <input type="text" name="display_name" required placeholder="例如：陈雅婷">
+        </div>
+        <div>
+          <label class="flabel">角色</label>
+          <select name="role" required>
+            {% for r in role_choices %}<option value="{{ r }}">{{ role_labels[r] }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="flabel">账号</label>
+          <input type="text" name="username" required placeholder="登录用账号">
+        </div>
+        <div>
+          <label class="flabel">初始密码</label>
+          <input type="password" name="password" required placeholder="至少 6 位">
+        </div>
+      </div>
+      <div style="margin-top:14px;display:flex;justify-content:flex-end;">
+        <button class="btn btn-primary" type="submit">+ 添加用户</button>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}

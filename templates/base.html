@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}精英顾问陪跑系统{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div id="shell">
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3L4 7v5c0 5 3.5 8.2 8 9 4.5-.8 8-4 8-9V7l-8-4z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12l2 2 4-4.5" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">精英顾问陪跑系统</div>
+        <div class="brand-sub">90天精英顾问特训营</div>
+      </div>
+    </div>
+
+    <div class="side-label">{{ role_label }}</div>
+    <nav class="section-nav">
+      {% for endpoint, label in nav_items %}
+        <a class="nav-item {{ 'active' if request.endpoint == endpoint else '' }}" href="{{ url_for(endpoint) }}"><span class="dot"></span>{{ label }}</a>
+      {% endfor %}
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="who-row">
+        <div class="avatar" style="width:28px;height:28px;font-size:11px;">{{ g.user.display_name[-2:] }}</div>
+        <div><div class="who-name">{{ g.user.display_name }}</div><div class="who-role">{{ g.user.username }}</div></div>
+      </div>
+      <form action="{{ url_for('logout') }}" method="post">
+        <button class="logout-btn" type="submit">退出登录</button>
+      </form>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div class="topbar">
+      <div class="persona">
+        <div class="avatar">{{ g.user.display_name[-2:] }}</div>
+        <div><div class="persona-name">{{ g.user.display_name }}</div><div class="persona-role">{{ role_label }}</div></div>
+      </div>
+      <span class="tag">90天精英顾问特训营</span>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, msg in messages %}
+        <div class="{{ 'flash-error' if category == 'error' else 'flash-ok' }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <h1 class="page-title">{% block page_title %}{% endblock %}</h1>
+    <p class="page-sub">{% block page_sub %}{% endblock %}</p>
+
+    {% block content %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>
