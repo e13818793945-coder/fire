@@ -398,7 +398,7 @@ def pm_orphan_new():
     name = f.get("name", "").strip()
     agent_id = f.get("agent_id", "")
     if not name or not agent_id:
-        flash("请填写客户姓名并选择分配的代理人", "error")
+        flash("请填写客户编码并选择分配的代理人", "error")
         return redirect(url_for("pm_orphan"))
     ts = now_iso()
     cur = db.execute(

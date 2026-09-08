@@ -7,7 +7,7 @@
   <div class="block-head"><div><h2>孤儿单客户分配</h2><p class="block-desc">从保司获取名单后，逐一录入并分配给代理人</p></div></div>
   <div class="table-wrap">
     <table class="dtable">
-      <thead><tr><th>客户姓名</th><th>分配给</th><th>录入时间</th></tr></thead>
+      <thead><tr><th>客户编码</th><th>分配给</th><th>录入时间</th></tr></thead>
       <tbody>
       {% for c in orphan_clients %}
         <tr><td class="cell-name">{{ c.name }}</td><td>{{ c.agent_name }}</td><td class="num">{{ c.created_at[:10] }}</td></tr>
@@ -20,12 +20,11 @@
 </section>
 
 <section class="block">
-  <div class="block-head"><div><h2>录入并分配</h2></div></div>
+  <div class="block-head"><div><h2>录入并分配</h2><p class="block-desc">系统内仅记录客户编码，不录入真实姓名/联系方式；真实身份对应关系请通过保司/公司台账另行下发给被分配的代理人</p></div></div>
   <div class="card card-pad">
     <form method="post" action="{{ url_for('pm_orphan_new') }}">
       <div class="form-grid">
-        <div><label class="flabel">客户姓名</label><input type="text" name="name" required></div>
-        <div><label class="flabel">联系电话</label><input type="text" name="phone"></div>
+        <div><label class="flabel">客户编码</label><input type="text" name="name" required placeholder="例如：O20260901-01"></div>
         <div>
           <label class="flabel">分配给代理人</label>
           <select name="agent_id" required>
