@@ -9,9 +9,12 @@ TIER_NOTE = {
 }
 
 INCOME_GAP_HINT = {
-    "高": "家庭资产规模较大，建议评估大额保单与资产传承类需求。",
-    "中": "建议围绕家庭主要经济支柱的重疾/寿险保额是否覆盖收入缺口展开沟通。",
-    "低": "建议优先补齐意外与医疗类基础保障，避免过早切入复杂产品。",
+    "30万以下": "建议优先补齐意外与医疗类基础保障，避免过早切入复杂产品。",
+    "30万-50万": "建议围绕家庭主要经济支柱的重疾/寿险保额是否覆盖收入缺口展开沟通。",
+    "50万-100万": "建议围绕家庭主要经济支柱的重疾/寿险保额是否覆盖收入缺口展开沟通。",
+    "100万-300万": "家庭资产规模较大，建议评估大额保单与资产传承类需求。",
+    "300万-500万": "家庭资产规模较大，建议评估大额保单与资产传承类需求。",
+    "500万以上": "家庭资产规模较大，建议评估大额保单与资产传承类需求。",
     "": "收入区间信息尚未录入，建议下次沟通时补充。",
 }
 
@@ -26,7 +29,7 @@ FAMILY_HINT = {
 def generate_kyc_text(client):
     """client: sqlite3.Row，需包含 name, tier, age_range, family_status, income_range, existing_policies, risk_notes"""
     lines = []
-    lines.append(f"客户：{client['name']}（{client['tier']} 类 · {client['source']}）")
+    lines.append(f"客户编码：{client['name']}（{client['tier']} 类 · {client['source']}）")
     lines.append("")
     lines.append(f"分层建议：{TIER_NOTE.get(client['tier'], '')}")
 

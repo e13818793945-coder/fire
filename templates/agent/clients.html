@@ -7,7 +7,7 @@
   <div class="block-head"><div><h2>我的客户</h2><p class="block-desc">录入并维护自有存量客户信息；孤儿单客户由项目经理分配后会自动出现在此列表</p></div></div>
   <div class="table-wrap">
     <table class="dtable">
-      <thead><tr><th>客户姓名</th><th>分层</th><th>来源</th><th>最近更新</th><th></th></tr></thead>
+      <thead><tr><th>客户编码</th><th>分层</th><th>来源</th><th>最近更新</th><th></th></tr></thead>
       <tbody>
       {% for c in clients %}
         <tr>
@@ -30,8 +30,7 @@
   <div class="card card-pad">
     <form method="post" action="{{ url_for('agent_clients_new') }}">
       <div class="form-grid">
-        <div><label class="flabel">客户姓名</label><input type="text" name="name" required></div>
-        <div><label class="flabel">联系电话</label><input type="text" name="phone"></div>
+        <div><label class="flabel">客户编码</label><input type="text" name="name" required placeholder="例如：C20260901-01"></div>
         <div>
           <label class="flabel">分层</label>
           <select name="tier"><option value="A">A 类（重点）</option><option value="B" selected>B 类（稳定）</option><option value="C">C 类（培育）</option></select>
@@ -46,7 +45,15 @@
         </div>
         <div>
           <label class="flabel">收入/资产区间</label>
-          <select name="income_range"><option value="">未选择</option><option value="高">高</option><option value="中">中</option><option value="低">低</option></select>
+          <select name="income_range">
+            <option value="">未选择</option>
+            <option value="30万以下">30万以下</option>
+            <option value="30万-50万">30万-50万</option>
+            <option value="50万-100万">50万-100万</option>
+            <option value="100万-300万">100万-300万</option>
+            <option value="300万-500万">300万-500万</option>
+            <option value="500万以上">500万以上</option>
+          </select>
         </div>
         <div class="full"><label class="flabel">已有保障</label><input type="text" name="existing_policies" placeholder="例如：重疾险 1 份、医疗险 1 份"></div>
         <div class="full"><label class="flabel">风险与关注点</label><textarea name="risk_notes" placeholder="客户的顾虑、既往沟通要点等"></textarea></div>

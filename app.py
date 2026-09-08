@@ -213,7 +213,7 @@ def agent_clients_new():
     f = request.form
     name = f.get("name", "").strip()
     if not name:
-        flash("请填写客户姓名", "error")
+        flash("请填写客户编码", "error")
         return redirect(url_for("agent_clients"))
     ts = now_iso()
     cur = db.execute(
