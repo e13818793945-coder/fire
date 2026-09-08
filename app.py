@@ -578,6 +578,55 @@ def pm_orphan_pool_delete(pool_id):
     return redirect(url_for("pm_orphan"))
 
 
+@app.route("/pm/orphan/pool/bulk_assign", methods=["POST"])
+@role_required("pm")
+def pm_orphan_pool_bulk_assign():
+    db = get_db()
+    raw_ids = request.form.getlist("pool_ids")
+    agent_id = request.form.get("agent_id", "")
+    pool_ids = []
+    for v in raw_ids:
+        try:
+            pool_ids.append(int(v))
+        except ValueError:
+            continue
+    if not pool_ids:
+        flash("请先勾选要分配的待分配记录", "error")
+        return redirect(url_for("pm_orphan"))
+    if not agent_id:
+        flash("请选择要统一分配的代理人", "error")
+        return redirect(url_for("pm_orphan"))
+    agent = db.execute("SELECT * FROM users WHERE id=? AND role='agent'", (agent_id,)).fetchone()
+    if agent is None:
+        flash("代理人不存在", "error")
+        return redirect(url_for("pm_orphan"))
+    ts = now_iso()
+    assigned_codes = []
+    for pid in pool_ids:
+        pool_row = db.execute("SELECT * FROM orphan_pool WHERE id=?", (pid,)).fetchone()
+        if pool_row is None:
+            continue
+        cur = db.execute(
+            """INSERT INTO clients (agent_id, name, phone, tier, source, age_range, family_status, income_range, existing_policies, risk_notes, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (agent_id, pool_row["code"], "", pool_row["tier"], "孤儿单",
+             pool_row["age_range"] or "", pool_row["family_status"] or "", pool_row["income_range"] or "",
+             "", "", ts, ts),
+        )
+        client_id = cur.lastrowid
+        client = db.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+        db.execute("INSERT INTO kyc_reports (client_id, content, generated_at) VALUES (?,?,?)", (client_id, generate_kyc_text(client), now_iso()))
+        db.execute("DELETE FROM orphan_pool WHERE id=?", (pid,))
+        assigned_codes.append(pool_row["code"])
+    db.commit()
+    if assigned_codes:
+        log_action(g.user, "批量分配孤儿单客户", f"{len(assigned_codes)}条 -> agent {agent_id}: {', '.join(assigned_codes)}")
+        flash(f"已将 {len(assigned_codes)} 条待分配记录统一分配给「{agent['display_name']}」", "ok")
+    else:
+        flash("勾选的记录未找到（可能已被处理），未执行分配", "error")
+    return redirect(url_for("pm_orphan"))
+
+
 @app.route("/pm/orphan/client/<int:client_id>/edit", methods=["POST"])
 @role_required("pm")
 def pm_orphan_client_edit(client_id):
