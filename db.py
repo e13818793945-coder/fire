@@ -1,6 +1,7 @@
 """数据库访问层：原生 sqlite3，不依赖 ORM，便于直接部署到自建 Ubuntu 服务器。"""
 import sqlite3
 import os
+import fcntl
 from datetime import datetime, timedelta
 from flask import g, current_app
 from werkzeug.security import generate_password_hash
@@ -39,8 +40,18 @@ def today():
 
 def init_app(app):
     app.teardown_appcontext(close_db)
-    with app.app_context():
-        init_db()
+    # 生产环境用 gunicorn 多 worker 启动时，每个 worker 进程都会各自导入本模块并尝试建表/播种数据。
+    # 用文件锁把「建表 + 播种默认数据」这一步在同一台机器的所有进程间串行化，避免并发 INSERT 撞到
+    # UNIQUE 约束（例如 admin 账号被插入两次）而导致某个 worker 启动时直接崩溃。
+    lock_path = DB_PATH + ".init.lock"
+    os.makedirs(os.path.dirname(lock_path) or ".", exist_ok=True)
+    with open(lock_path, "w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            with app.app_context():
+                init_db()
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def init_db():
