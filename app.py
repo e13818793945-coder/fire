@@ -173,7 +173,7 @@ def admin_users_reset_password(user_id):
 @app.route("/admin/settings", methods=["GET"])
 @role_required("admin")
 def admin_settings():
-    keys = ["auto_backup", "two_factor_required", "audit_log_retention_days", "lock_new_accounts"]
+    keys = ["auto_backup", "audit_log_retention_days", "lock_new_accounts"]
     settings = {k: get_setting(k) for k in keys}
     return render("admin/settings.html", settings=settings)
 
@@ -181,7 +181,7 @@ def admin_settings():
 @app.route("/admin/settings/toggle/<key>", methods=["POST"])
 @role_required("admin")
 def admin_settings_toggle(key):
-    if key not in ("auto_backup", "two_factor_required", "lock_new_accounts"):
+    if key not in ("auto_backup", "lock_new_accounts"):
         abort(404)
     current = get_setting(key, "0")
     set_setting(key, "0" if current == "1" else "1")

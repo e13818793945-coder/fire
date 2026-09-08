@@ -12,10 +12,6 @@
         <form method="post" action="{{ url_for('admin_settings_toggle', key='auto_backup') }}"><button class="toggle {{ 'on' if settings.auto_backup=='1' else '' }}" type="submit"></button></form>
       </div>
       <div class="settings-row">
-        <div><div class="settings-title">登录双重验证</div><div class="settings-desc">管理员与项目经理账号强制启用（当前版本为配置项，二次验证流程留待下一轮接入短信/邮箱验证码）</div></div>
-        <form method="post" action="{{ url_for('admin_settings_toggle', key='two_factor_required') }}"><button class="toggle {{ 'on' if settings.two_factor_required=='1' else '' }}" type="submit"></button></form>
-      </div>
-      <div class="settings-row">
         <div><div class="settings-title">操作日志留存</div><div class="settings-desc">保留 {{ settings.audit_log_retention_days }} 天可追溯记录，见「操作日志」</div></div>
         <span class="readonly-flag">已记录</span>
       </div>

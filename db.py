@@ -100,7 +100,6 @@ def init_db():
     # 种子：系统设置默认值
     defaults = {
         "auto_backup": "1",
-        "two_factor_required": "1",
         "audit_log_retention_days": "180",
         "lock_new_accounts": "0",
     }
