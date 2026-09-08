@@ -27,6 +27,17 @@ CREATE TABLE IF NOT EXISTS clients (
     updated_at        TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS orphan_pool (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    code          TEXT UNIQUE NOT NULL,
+    tier          TEXT NOT NULL DEFAULT 'B' CHECK(tier IN ('A','B','C')),
+    age_range     TEXT,
+    family_status TEXT,
+    income_range  TEXT,
+    imported_by   INTEGER REFERENCES users(id),
+    imported_at   TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS kyc_reports (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     client_id    INTEGER UNIQUE NOT NULL REFERENCES clients(id),

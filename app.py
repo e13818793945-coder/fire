@@ -1,11 +1,13 @@
 import os
+import io
 import json
-from flask import Flask, request, session, redirect, url_for, render_template, flash, g, abort
+from flask import Flask, request, session, redirect, url_for, render_template, flash, g, abort, send_file
+from openpyxl import Workbook, load_workbook
 
 import db as dbmod
 from db import get_db, now_iso, today, get_setting, set_setting, log_action
 from auth import load_logged_in_user, login_required, role_required, ROLE_LABEL, ROLE_HOME, all_agents
-from kyc import generate_kyc_text
+from kyc import generate_kyc_text, TIER_CHOICES, AGE_CHOICES, FAMILY_CHOICES, INCOME_CHOICES
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
@@ -387,7 +389,8 @@ def pm_orphan():
     orphan_clients = db.execute(
         "SELECT c.*, u.display_name as agent_name FROM clients c JOIN users u ON u.id=c.agent_id WHERE c.source='孤儿单' ORDER BY c.created_at DESC"
     ).fetchall()
-    return render("pm/orphan.html", agents=agents, orphan_clients=orphan_clients)
+    pool_rows = db.execute("SELECT * FROM orphan_pool ORDER BY imported_at DESC").fetchall()
+    return render("pm/orphan.html", agents=agents, orphan_clients=orphan_clients, pool_rows=pool_rows)
 
 
 @app.route("/pm/orphan/new", methods=["POST"])
@@ -412,6 +415,166 @@ def pm_orphan_new():
     db.commit()
     log_action(g.user, "分配孤儿单客户", f"{name} -> agent {agent_id}")
     flash(f"已将「{name}」分配给对应代理人", "ok")
+    return redirect(url_for("pm_orphan"))
+
+
+def _cell_str(v):
+    """把 openpyxl 单元格的值统一转成去空格字符串；整数值的浮点数（如 20260901.0）去掉多余的 .0"""
+    if v is None:
+        return ""
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v).strip()
+
+
+@app.route("/pm/orphan/import/template")
+@role_required("pm")
+def pm_orphan_import_template():
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "导入数据"
+    ws.append(["客户编码", "分层(A/B/C)", "年龄区间", "家庭结构", "收入/资产区间"])
+
+    note = wb.create_sheet("填写说明")
+    note_lines = [
+        "客户编码：必填，需保证在保司自己的名单里唯一；系统会自动跟已有编码去重。",
+        "分层：A/B/C，留空默认按 B 处理。",
+        "年龄区间可选值：" + "、".join(AGE_CHOICES) + "；无数据可留空。",
+        "家庭结构可选值：" + "、".join(FAMILY_CHOICES) + "；无数据可留空。",
+        "收入/资产区间可选值：" + "、".join(INCOME_CHOICES) + "；无数据可留空。",
+        "留空的字段由代理人在分配后自行在系统内补充。",
+        "重要：本模板任何一列都不要填写客户真实姓名、身份证号、手机号等可识别信息，只填写编码。",
+    ]
+    for i, line in enumerate(note_lines, start=1):
+        note.cell(row=i, column=1, value=line)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name="孤儿单导入模板.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/pm/orphan/import", methods=["POST"])
+@role_required("pm")
+def pm_orphan_import():
+    file = request.files.get("import_file")
+    if not file or not file.filename:
+        flash("请选择要上传的文件", "error")
+        return redirect(url_for("pm_orphan"))
+    if not file.filename.lower().endswith((".xlsx", ".xlsm")):
+        flash("仅支持 .xlsx 文件，请用上面的模板另存后上传", "error")
+        return redirect(url_for("pm_orphan"))
+
+    try:
+        wb = load_workbook(file, data_only=True)
+        ws = wb[wb.sheetnames[0]]
+    except Exception:
+        flash("文件解析失败，请确认是否为有效的 Excel 文件", "error")
+        return redirect(url_for("pm_orphan"))
+
+    db = get_db()
+    existing_codes = {r["name"] for r in db.execute("SELECT name FROM clients").fetchall()}
+    existing_codes |= {r["code"] for r in db.execute("SELECT code FROM orphan_pool").fetchall()}
+    seen_in_file = set()
+
+    ok_count = 0
+    errors = []
+    ts = now_iso()
+    for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        if row is None or all(c is None or _cell_str(c) == "" for c in row):
+            continue
+        code = _cell_str(row[0]) if len(row) > 0 else ""
+        tier = _cell_str(row[1]) if len(row) > 1 else ""
+        age = _cell_str(row[2]) if len(row) > 2 else ""
+        family = _cell_str(row[3]) if len(row) > 3 else ""
+        income = _cell_str(row[4]) if len(row) > 4 else ""
+
+        if not code:
+            errors.append(f"第{idx}行：客户编码为空，已跳过")
+            continue
+        if code in existing_codes or code in seen_in_file:
+            errors.append(f"第{idx}行：编码「{code}」重复，已跳过")
+            continue
+        if not tier:
+            tier = "B"
+        elif tier not in TIER_CHOICES:
+            errors.append(f"第{idx}行「{code}」：分层「{tier}」不是 A/B/C，已跳过")
+            continue
+        if age and age not in AGE_CHOICES:
+            errors.append(f"第{idx}行「{code}」：年龄区间「{age}」不在可选范围内，已跳过")
+            continue
+        if family and family not in FAMILY_CHOICES:
+            errors.append(f"第{idx}行「{code}」：家庭结构「{family}」不在可选范围内，已跳过")
+            continue
+        if income and income not in INCOME_CHOICES:
+            errors.append(f"第{idx}行「{code}」：收入区间「{income}」不在可选范围内，已跳过")
+            continue
+
+        db.execute(
+            "INSERT INTO orphan_pool (code, tier, age_range, family_status, income_range, imported_by, imported_at) VALUES (?,?,?,?,?,?,?)",
+            (code, tier, age, family, income, g.user["id"], ts),
+        )
+        seen_in_file.add(code)
+        ok_count += 1
+
+    db.commit()
+    log_action(g.user, "批量导入孤儿单", f"成功{ok_count}条，失败{len(errors)}条")
+    if ok_count:
+        flash(f"成功导入 {ok_count} 条，进入待分配名单", "ok")
+    if errors:
+        shown = errors[:20]
+        more = f"；另有 {len(errors) - 20} 条错误未列出" if len(errors) > 20 else ""
+        flash("以下行未导入：" + "；".join(shown) + more, "error")
+    if not ok_count and not errors:
+        flash("文件中没有可导入的数据行", "error")
+    return redirect(url_for("pm_orphan"))
+
+
+@app.route("/pm/orphan/pool/<int:pool_id>/assign", methods=["POST"])
+@role_required("pm")
+def pm_orphan_pool_assign(pool_id):
+    db = get_db()
+    pool_row = db.execute("SELECT * FROM orphan_pool WHERE id=?", (pool_id,)).fetchone()
+    if pool_row is None:
+        abort(404)
+    agent_id = request.form.get("agent_id", "")
+    if not agent_id:
+        flash("请选择分配的代理人", "error")
+        return redirect(url_for("pm_orphan"))
+    ts = now_iso()
+    cur = db.execute(
+        """INSERT INTO clients (agent_id, name, phone, tier, source, age_range, family_status, income_range, existing_policies, risk_notes, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (agent_id, pool_row["code"], "", pool_row["tier"], "孤儿单",
+         pool_row["age_range"] or "", pool_row["family_status"] or "", pool_row["income_range"] or "",
+         "", "", ts, ts),
+    )
+    client_id = cur.lastrowid
+    client = db.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+    db.execute("INSERT INTO kyc_reports (client_id, content, generated_at) VALUES (?,?,?)", (client_id, generate_kyc_text(client), now_iso()))
+    db.execute("DELETE FROM orphan_pool WHERE id=?", (pool_id,))
+    db.commit()
+    log_action(g.user, "分配孤儿单客户", f"{pool_row['code']} -> agent {agent_id}")
+    flash(f"已将「{pool_row['code']}」分配给对应代理人", "ok")
+    return redirect(url_for("pm_orphan"))
+
+
+@app.route("/pm/orphan/pool/<int:pool_id>/delete", methods=["POST"])
+@role_required("pm")
+def pm_orphan_pool_delete(pool_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM orphan_pool WHERE id=?", (pool_id,)).fetchone()
+    if row is None:
+        abort(404)
+    db.execute("DELETE FROM orphan_pool WHERE id=?", (pool_id,))
+    db.commit()
+    log_action(g.user, "删除待分配孤儿单", row["code"])
+    flash(f"已删除「{row['code']}」", "ok")
     return redirect(url_for("pm_orphan"))
 
 

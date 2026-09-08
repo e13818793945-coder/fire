@@ -4,7 +4,59 @@
 {% block page_sub %}分配孤儿单、录入各环节报告与出勤数据{% endblock %}
 {% block content %}
 <section class="block">
-  <div class="block-head"><div><h2>孤儿单客户分配</h2><p class="block-desc">从保司获取名单后，逐一录入并分配给代理人</p></div></div>
+  <div class="block-head">
+    <div>
+      <h2>批量导入</h2>
+      <p class="block-desc">用模板整理保司提供的脱敏名单后上传；模板里任何一列都不应包含真实姓名/身份证号/手机号，导入的都是待分配记录，还没有分配给具体代理人</p>
+    </div>
+  </div>
+  <div class="card card-pad">
+    <a class="btn btn-sm" href="{{ url_for('pm_orphan_import_template') }}">下载导入模板（.xlsx）</a>
+    <form method="post" action="{{ url_for('pm_orphan_import') }}" enctype="multipart/form-data" style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <input type="file" name="import_file" accept=".xlsx,.xlsm" required>
+      <button class="btn btn-primary btn-sm" type="submit">上传并导入</button>
+    </form>
+  </div>
+</section>
+
+<section class="block">
+  <div class="block-head"><div><h2>待分配名单</h2><p class="block-desc">批量导入后尚未分配的客户，只有项目经理能看到，分配后才会出现在对应代理人的客户列表里</p></div></div>
+  <div class="table-wrap">
+    <table class="dtable">
+      <thead><tr><th>客户编码</th><th>分层</th><th>年龄区间</th><th>家庭结构</th><th>收入/资产区间</th><th>导入时间</th><th></th></tr></thead>
+      <tbody>
+      {% for p in pool_rows %}
+        <tr>
+          <td class="cell-name">{{ p.code }}</td>
+          <td><span class="badge badge-off">{{ p.tier }} 类</span></td>
+          <td>{{ p.age_range or '—' }}</td>
+          <td>{{ p.family_status or '—' }}</td>
+          <td>{{ p.income_range or '—' }}</td>
+          <td class="num">{{ p.imported_at[:10] }}</td>
+          <td style="display:flex;gap:6px;justify-content:flex-end;align-items:center;">
+            <form class="inline" method="post" action="{{ url_for('pm_orphan_pool_assign', pool_id=p.id) }}" style="display:flex;gap:6px;">
+              <select name="agent_id" required style="width:110px;">
+                <option value="">分配给…</option>
+                {% for a in agents %}<option value="{{ a.id }}">{{ a.display_name }}</option>{% endfor %}
+              </select>
+              <button class="btn btn-sm btn-primary" type="submit">分配</button>
+            </form>
+            <form class="inline" method="post" action="{{ url_for('pm_orphan_pool_delete', pool_id=p.id) }}" onsubmit="return confirm('确认删除「{{ p.code }}」这条待分配记录？');">
+              <button class="btn btn-sm" type="submit">删除</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="empty-note">暂无待分配记录，先在上面批量导入或在下方单条录入</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if not agents %}<p class="empty-note">请先在系统管理中创建代理人账号。</p>{% endif %}
+</section>
+
+<section class="block">
+  <div class="block-head"><div><h2>已分配孤儿单客户</h2></div></div>
   <div class="table-wrap">
     <table class="dtable">
       <thead><tr><th>客户编码</th><th>分配给</th><th>录入时间</th></tr></thead>
@@ -12,7 +64,7 @@
       {% for c in orphan_clients %}
         <tr><td class="cell-name">{{ c.name }}</td><td>{{ c.agent_name }}</td><td class="num">{{ c.created_at[:10] }}</td></tr>
       {% else %}
-        <tr><td colspan="3" class="empty-note">暂无孤儿单客户</td></tr>
+        <tr><td colspan="3" class="empty-note">暂无已分配的孤儿单客户</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -20,7 +72,7 @@
 </section>
 
 <section class="block">
-  <div class="block-head"><div><h2>录入并分配</h2><p class="block-desc">系统内仅记录客户编码，不录入真实姓名/联系方式；真实身份对应关系请通过保司/公司台账另行下发给被分配的代理人</p></div></div>
+  <div class="block-head"><div><h2>单条录入并分配</h2><p class="block-desc">零星个别客户可以不走批量导入，直接在这里录入一条并立即分配；系统内仅记录客户编码，不录入真实姓名/联系方式，真实身份对应关系请通过保司/公司台账另行下发给被分配的代理人</p></div></div>
   <div class="card card-pad">
     <form method="post" action="{{ url_for('pm_orphan_new') }}">
       <div class="form-grid">
