@@ -4,6 +4,22 @@
 {% block page_sub %}录入客户、提交经营动态、查看反馈与各类报告{% endblock %}
 {% block content %}
 <section class="block">
+  <div class="block-head"><div><h2>五维数据总览</h2><p class="block-desc">系统按当前数据实时算出，仅供本人参考，不是项目经理的最终评分</p></div></div>
+  <div class="card card-pad">
+    {{ radar_svg | safe }}
+    <div style="height:6px;"></div>
+    {% for d in live_dims %}
+      <div class="growth-row">
+        <div>{{ d.label }}</div>
+        <div class="growth-track"><div class="growth-fill" style="width:{{ d.value }}%;"></div></div>
+        <div class="num" style="text-align:right;color:var(--ink-soft);">{{ d.value }}</div>
+      </div>
+      <p class="cell-sub" style="margin:2px 0 10px;">{{ d.note }}</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="block">
   <div class="block-head"><div><h2>个人成长报告</h2><p class="block-desc">教练与项目经理共同评定，结营前更新</p></div></div>
   {% if report %}
     <div class="card card-pad">

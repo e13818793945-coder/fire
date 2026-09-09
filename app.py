@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import math
 from flask import Flask, request, session, redirect, url_for, render_template, flash, g, abort, send_from_directory
 
 import db as dbmod
@@ -399,7 +400,9 @@ def agent_growth():
     db = get_db()
     report = db.execute("SELECT * FROM growth_reports WHERE agent_id=? AND status='published'", (g.user["id"],)).fetchone()
     metrics = json.loads(report["metrics_json"]) if report else {}
-    return render("agent/growth.html", report=report, metrics=metrics)
+    live_dims = compute_live_five_dims(db, g.user["id"])
+    radar_svg = render_radar_svg(live_dims)
+    return render("agent/growth.html", report=report, metrics=metrics, live_dims=live_dims, radar_svg=radar_svg)
 
 
 # ================= 教练 =================
@@ -846,6 +849,73 @@ def compute_growth_score_suggestions(db, agent_id):
         "业绩转化能力": perf_score,
         "转介绍开发": referral_score,
     }
+
+
+def compute_live_five_dims(db, agent_id):
+    """代理人工作台的「五维数据总览」——实时算出来给本人看的参考值，不是项目经理最终打的分。
+    顺序固定为：客户经营能力/KYC应用能力/活动量达成/业绩转化能力/转介绍开发，和成长报告口径一致。"""
+    suggestions = compute_growth_score_suggestions(db, agent_id)
+    m = compute_agent_metrics(db, agent_id)
+    total_clients = m["tier_a"] + m["tier_b"] + m["tier_c"]
+    kyc_score = round(100 * m["kyc_count"] / total_clients) if total_clients else 0
+    return [
+        {"label": "客户经营能力", "value": suggestions["客户经营能力"],
+         "note": f"A类{m['tier_a']}/B类{m['tier_b']}/C类{m['tier_c']}，跟本期学员最高值比的相对分"},
+        {"label": "KYC应用能力", "value": kyc_score,
+         "note": f"{m['kyc_count']}/{total_clients} 位客户已生成 KYC 报告"},
+        {"label": "活动量达成", "value": suggestions["活动量达成"],
+         "note": "出勤率与经营动态提交率各占一半，真实完成率"},
+        {"label": "业绩转化能力", "value": suggestions["业绩转化能力"],
+         "note": f"累计新单{m['policies']}件/保费{m['premium']}/FYC{m['fyc']}，跟本期学员最高值比的相对分"},
+        {"label": "转介绍开发", "value": suggestions["转介绍开发"],
+         "note": f"累计转介绍{m['referrals']}位，跟本期学员最高值比的相对分"},
+    ]
+
+
+def render_radar_svg(dims, size=280):
+    """把 [{'label':..,'value':0-100}, ...] 画成一张五边形雷达图 SVG（纯服务端拼字符串，不依赖前端库）。"""
+    n = len(dims)
+    cx = cy = size / 2
+    r = size / 2 - 58  # 给外圈标签留边距
+
+    def point(i, frac):
+        angle = -math.pi / 2 + i * (2 * math.pi / n)
+        return cx + r * frac * math.cos(angle), cy + r * frac * math.sin(angle)
+
+    rings = []
+    for frac in (0.25, 0.5, 0.75, 1.0):
+        pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in (point(i, frac) for i in range(n)))
+        rings.append(f'<polygon points="{pts}" style="fill:none;stroke:var(--border);stroke-width:1"/>')
+
+    axes = []
+    labels = []
+    for i, d in enumerate(dims):
+        x, y = point(i, 1.0)
+        axes.append(f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{x:.1f}" y2="{y:.1f}" style="stroke:var(--border);stroke-width:1"/>')
+        lx, ly = point(i, 1.28)
+        anchor = "middle"
+        if lx < cx - 6:
+            anchor = "end"
+        elif lx > cx + 6:
+            anchor = "start"
+        labels.append(
+            f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="12" style="fill:var(--ink-soft)" '
+            f'text-anchor="{anchor}" dominant-baseline="middle">{d["label"]}（{d["value"]}）</text>'
+        )
+
+    clamped = [max(0, min(100, d["value"])) for d in dims]
+    data_pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in (point(i, v / 100) for i, v in enumerate(clamped)))
+    data_polygon = f'<polygon points="{data_pts}" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>'
+    dots = "".join(
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3.2" style="fill:var(--accent)"/>'
+        for x, y in (point(i, v / 100) for i, v in enumerate(clamped))
+    )
+    return (
+        f'<svg viewBox="0 0 {size} {size}" width="100%" height="auto" role="img" '
+        f'aria-label="五维数据雷达图" style="max-width:360px;display:block;margin:0 auto;">'
+        + "".join(rings) + "".join(axes) + data_polygon + dots + "".join(labels)
+        + "</svg>"
+    )
 
 
 def compute_final_summary(db):
