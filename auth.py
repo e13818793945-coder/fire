@@ -15,7 +15,7 @@ ROLE_HOME = {
     "admin": "admin_users",
     "agent": "agent_clients",
     "coach": "coach_updates",
-    "pm": "pm_orphan",
+    "pm": "pm_periods",
     "insurer": "insurer_overview",
 }
 
