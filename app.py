@@ -1,17 +1,63 @@
 import os
 import json
-from flask import Flask, request, session, redirect, url_for, render_template, flash, g, abort
+import uuid
+from flask import Flask, request, session, redirect, url_for, render_template, flash, g, abort, send_from_directory
 
 import db as dbmod
 from db import get_db, now_iso, today, get_setting, set_setting, log_action
 from auth import load_logged_in_user, login_required, role_required, ROLE_LABEL, ROLE_HOME, all_agents
 from kyc import generate_kyc_text
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 import ai_report
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("COACHING_SECRET_KEY", "dev-secret-change-me")
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 报告 PDF 上传上限 20MB
+
+
+@app.errorhandler(413)
+def _too_large(e):
+    flash("文件太大，PDF 报告请控制在 20MB 以内", "error")
+    return redirect(request.referrer or url_for("login")), 302
+
+
+def _save_report_pdf(file_storage):
+    """校验并保存一份上传的报告 PDF，返回 (存储文件名, 原始文件名)；未选择文件时返回 None。"""
+    if file_storage is None or not file_storage.filename:
+        return None
+    original_name = file_storage.filename
+    if not original_name.lower().endswith(".pdf"):
+        flash("报告文件必须是 PDF 格式", "error")
+        return None
+    safe_original = secure_filename(original_name) or "report.pdf"
+    stored_name = f"{uuid.uuid4().hex}_{safe_original}"
+    os.makedirs(dbmod.UPLOAD_DIR, exist_ok=True)
+    file_storage.save(os.path.join(dbmod.UPLOAD_DIR, stored_name))
+    return stored_name, original_name
+
+
+def _delete_report_pdf(filename):
+    if not filename:
+        return
+    path = os.path.join(dbmod.UPLOAD_DIR, filename)
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _send_report_pdf(filename, original_name):
+    if not filename:
+        abort(404)
+    path = os.path.join(dbmod.UPLOAD_DIR, filename)
+    if not os.path.isfile(path):
+        abort(404)
+    return send_from_directory(
+        dbmod.UPLOAD_DIR, filename, mimetype="application/pdf",
+        as_attachment=False, download_name=original_name or filename,
+    )
 
 dbmod.init_app(app)
 
@@ -466,14 +512,64 @@ def pm_central():
 def pm_central_update(session_id):
     db = get_db()
     f = request.form
+    row = db.execute("SELECT * FROM central_sessions WHERE id=?", (session_id,)).fetchone()
+    if row is None:
+        abort(404)
+    pdf_filename, pdf_original_name = row["pdf_filename"], row["pdf_original_name"]
+    saved = _save_report_pdf(request.files.get("pdf"))
+    if saved:
+        _delete_report_pdf(pdf_filename)
+        pdf_filename, pdf_original_name = saved
     db.execute(
-        "UPDATE central_sessions SET date=?, title=?, summary=?, published=? WHERE id=?",
-        (f.get("date", ""), f.get("title", ""), f.get("summary", ""), 1 if f.get("published") == "on" else 0, session_id),
+        "UPDATE central_sessions SET date=?, title=?, pdf_filename=?, pdf_original_name=?, published=? WHERE id=?",
+        (f.get("date", ""), f.get("title", ""), pdf_filename, pdf_original_name, 1 if f.get("published") == "on" else 0, session_id),
     )
     db.commit()
     log_action(g.user, "更新集中辅导会总结", f"session={session_id}")
     flash("已保存", "ok")
     return redirect(url_for("pm_central"))
+
+
+@app.route("/pm/central/<int:session_id>/pdf/remove", methods=["POST"])
+@role_required("pm")
+def pm_central_pdf_remove(session_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM central_sessions WHERE id=?", (session_id,)).fetchone()
+    if row is None:
+        abort(404)
+    _delete_report_pdf(row["pdf_filename"])
+    db.execute("UPDATE central_sessions SET pdf_filename=NULL, pdf_original_name=NULL WHERE id=?", (session_id,))
+    db.commit()
+    log_action(g.user, "移除集中辅导会报告PDF", f"session={session_id}")
+    flash("已移除已上传的报告", "ok")
+    return redirect(url_for("pm_central"))
+
+
+@app.route("/pm/central/<int:session_id>/pdf")
+@role_required("pm")
+def pm_central_pdf(session_id):
+    row = get_db().execute("SELECT * FROM central_sessions WHERE id=?", (session_id,)).fetchone()
+    if row is None:
+        abort(404)
+    return _send_report_pdf(row["pdf_filename"], row["pdf_original_name"])
+
+
+@app.route("/agent/central/<int:session_id>/pdf")
+@role_required("agent")
+def agent_central_pdf(session_id):
+    row = get_db().execute("SELECT * FROM central_sessions WHERE id=?", (session_id,)).fetchone()
+    if row is None or not row["published"]:
+        abort(404)
+    return _send_report_pdf(row["pdf_filename"], row["pdf_original_name"])
+
+
+@app.route("/insurer/central/<int:session_id>/pdf")
+@role_required("insurer")
+def insurer_central_pdf(session_id):
+    row = get_db().execute("SELECT * FROM central_sessions WHERE id=?", (session_id,)).fetchone()
+    if row is None or not row["published"]:
+        abort(404)
+    return _send_report_pdf(row["pdf_filename"], row["pdf_original_name"])
 
 
 @app.route("/pm/central/<int:session_id>/attendance/<int:agent_id>/toggle", methods=["POST"])
@@ -501,14 +597,64 @@ def pm_panke():
 def pm_panke_update(session_id):
     db = get_db()
     f = request.form
+    row = db.execute("SELECT * FROM panke_sessions WHERE id=?", (session_id,)).fetchone()
+    if row is None:
+        abort(404)
+    pdf_filename, pdf_original_name = row["pdf_filename"], row["pdf_original_name"]
+    saved = _save_report_pdf(request.files.get("pdf"))
+    if saved:
+        _delete_report_pdf(pdf_filename)
+        pdf_filename, pdf_original_name = saved
     db.execute(
-        "UPDATE panke_sessions SET date=?, focus=?, content=?, published=? WHERE id=?",
-        (f.get("date", ""), f.get("focus", ""), f.get("content", ""), 1 if f.get("published") == "on" else 0, session_id),
+        "UPDATE panke_sessions SET date=?, focus=?, pdf_filename=?, pdf_original_name=?, published=? WHERE id=?",
+        (f.get("date", ""), f.get("focus", ""), pdf_filename, pdf_original_name, 1 if f.get("published") == "on" else 0, session_id),
     )
     db.commit()
     log_action(g.user, "更新盘客报告", f"session={session_id}")
     flash("已保存", "ok")
     return redirect(url_for("pm_panke"))
+
+
+@app.route("/pm/panke/<int:session_id>/pdf/remove", methods=["POST"])
+@role_required("pm")
+def pm_panke_pdf_remove(session_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM panke_sessions WHERE id=?", (session_id,)).fetchone()
+    if row is None:
+        abort(404)
+    _delete_report_pdf(row["pdf_filename"])
+    db.execute("UPDATE panke_sessions SET pdf_filename=NULL, pdf_original_name=NULL WHERE id=?", (session_id,))
+    db.commit()
+    log_action(g.user, "移除盘客报告PDF", f"session={session_id}")
+    flash("已移除已上传的报告", "ok")
+    return redirect(url_for("pm_panke"))
+
+
+@app.route("/pm/panke/<int:session_id>/pdf")
+@role_required("pm")
+def pm_panke_pdf(session_id):
+    row = get_db().execute("SELECT * FROM panke_sessions WHERE id=?", (session_id,)).fetchone()
+    if row is None:
+        abort(404)
+    return _send_report_pdf(row["pdf_filename"], row["pdf_original_name"])
+
+
+@app.route("/agent/panke/<int:session_id>/pdf")
+@role_required("agent")
+def agent_panke_pdf(session_id):
+    row = get_db().execute("SELECT * FROM panke_sessions WHERE id=?", (session_id,)).fetchone()
+    if row is None or not row["published"]:
+        abort(404)
+    return _send_report_pdf(row["pdf_filename"], row["pdf_original_name"])
+
+
+@app.route("/insurer/panke/<int:session_id>/pdf")
+@role_required("insurer")
+def insurer_panke_pdf(session_id):
+    row = get_db().execute("SELECT * FROM panke_sessions WHERE id=?", (session_id,)).fetchone()
+    if row is None or not row["published"]:
+        abort(404)
+    return _send_report_pdf(row["pdf_filename"], row["pdf_original_name"])
 
 
 @app.route("/pm/panke/<int:session_id>/attendance/<int:agent_id>/toggle", methods=["POST"])
@@ -540,17 +686,61 @@ def pm_salon_save(session_id):
     db = get_db()
     agents = all_agents(db)
     for a in agents:
-        note = request.form.get(f"note_{a['id']}", "").strip()
         present = 1 if request.form.get(f"present_{a['id']}") == "on" else 0
         row = db.execute("SELECT * FROM salon_notes WHERE session_id=? AND agent_id=?", (session_id, a["id"])).fetchone()
+        pdf_filename = row["pdf_filename"] if row else None
+        pdf_original_name = row["pdf_original_name"] if row else None
+        saved = _save_report_pdf(request.files.get(f"pdf_{a['id']}"))
+        if saved:
+            _delete_report_pdf(pdf_filename)
+            pdf_filename, pdf_original_name = saved
         if row:
-            db.execute("UPDATE salon_notes SET note=?, present=? WHERE id=?", (note, present, row["id"]))
+            db.execute(
+                "UPDATE salon_notes SET pdf_filename=?, pdf_original_name=?, present=? WHERE id=?",
+                (pdf_filename, pdf_original_name, present, row["id"]),
+            )
         else:
-            db.execute("INSERT INTO salon_notes (session_id, agent_id, note, present) VALUES (?,?,?,?)", (session_id, a["id"], note, present))
+            db.execute(
+                "INSERT INTO salon_notes (session_id, agent_id, pdf_filename, pdf_original_name, present) VALUES (?,?,?,?,?)",
+                (session_id, a["id"], pdf_filename, pdf_original_name, present),
+            )
     db.commit()
     log_action(g.user, "更新沙龙陪谈记录", f"session={session_id}")
     flash("已保存", "ok")
     return redirect(url_for("pm_salon"))
+
+
+@app.route("/pm/salon/<int:session_id>/agent/<int:agent_id>/pdf/remove", methods=["POST"])
+@role_required("pm")
+def pm_salon_pdf_remove(session_id, agent_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM salon_notes WHERE session_id=? AND agent_id=?", (session_id, agent_id)).fetchone()
+    if row is None:
+        abort(404)
+    _delete_report_pdf(row["pdf_filename"])
+    db.execute("UPDATE salon_notes SET pdf_filename=NULL, pdf_original_name=NULL WHERE id=?", (row["id"],))
+    db.commit()
+    log_action(g.user, "移除沙龙陪谈报告PDF", f"session={session_id} agent={agent_id}")
+    flash("已移除已上传的报告", "ok")
+    return redirect(url_for("pm_salon"))
+
+
+@app.route("/pm/salon/<int:session_id>/agent/<int:agent_id>/pdf")
+@role_required("pm")
+def pm_salon_pdf(session_id, agent_id):
+    row = get_db().execute("SELECT * FROM salon_notes WHERE session_id=? AND agent_id=?", (session_id, agent_id)).fetchone()
+    if row is None:
+        abort(404)
+    return _send_report_pdf(row["pdf_filename"], row["pdf_original_name"])
+
+
+@app.route("/insurer/salon/<int:session_id>/agent/<int:agent_id>/pdf")
+@role_required("insurer")
+def insurer_salon_pdf(session_id, agent_id):
+    row = get_db().execute("SELECT * FROM salon_notes WHERE session_id=? AND agent_id=?", (session_id, agent_id)).fetchone()
+    if row is None:
+        abort(404)
+    return _send_report_pdf(row["pdf_filename"], row["pdf_original_name"])
 
 
 def compute_agent_metrics(db, agent_id):

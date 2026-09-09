@@ -8,6 +8,9 @@ from werkzeug.security import generate_password_hash
 
 DB_PATH = os.environ.get("COACHING_DB_PATH", os.path.join(os.path.dirname(__file__), "coaching.db"))
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schema.sql")
+# 上传的报告 PDF 默认放在数据库文件同一目录下（生产环境即挂载的持久卷），
+# 这样和 sqlite 文件一样能在部署/重启间保留；也可用 COACHING_UPLOAD_DIR 单独指定。
+UPLOAD_DIR = os.environ.get("COACHING_UPLOAD_DIR", os.path.join(os.path.dirname(DB_PATH) or ".", "uploads"))
 
 DEFAULT_ADMIN_USER = os.environ.get("COACHING_ADMIN_USER", "admin")
 DEFAULT_ADMIN_PASS = os.environ.get("COACHING_ADMIN_PASS", "p@ssw0rd")
@@ -73,7 +76,17 @@ def init_db():
     _ensure_column(db, "econ_updates", "premium_amount", "premium_amount REAL NOT NULL DEFAULT 0")
     _ensure_column(db, "econ_updates", "fyc_amount", "fyc_amount REAL NOT NULL DEFAULT 0")
     _ensure_column(db, "econ_updates", "referral_count", "referral_count INTEGER NOT NULL DEFAULT 0")
+
+    # 补丁：老库升级到「报告改为上传 PDF」字段（集中辅导会/盘客报告/沙龙陪谈报告）
+    _ensure_column(db, "central_sessions", "pdf_filename", "pdf_filename TEXT")
+    _ensure_column(db, "central_sessions", "pdf_original_name", "pdf_original_name TEXT")
+    _ensure_column(db, "panke_sessions", "pdf_filename", "pdf_filename TEXT")
+    _ensure_column(db, "panke_sessions", "pdf_original_name", "pdf_original_name TEXT")
+    _ensure_column(db, "salon_notes", "pdf_filename", "pdf_filename TEXT")
+    _ensure_column(db, "salon_notes", "pdf_original_name", "pdf_original_name TEXT")
     db.commit()
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
 
     # 种子：系统管理员账号（仅在用户表为空时创建，避免覆盖已有账号）
     row = db.execute("SELECT COUNT(*) c FROM users").fetchone()

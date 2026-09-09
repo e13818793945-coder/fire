@@ -10,7 +10,9 @@
     <div class="card card-pad" style="margin-bottom:12px;">
       <div style="font-weight:600;font-size:13.5px;">第 {{ s.seq }} 次{% if s.focus %} · {{ s.focus }}{% endif %}</div>
       <div class="cell-sub">{{ s.date or '日期待定' }}</div>
-      {% if s.published %}
+      {% if s.published and s.pdf_filename %}
+        <p style="margin:10px 0 0;font-size:13.5px;"><a href="{{ url_for('insurer_panke_pdf', session_id=s.id) }}" target="_blank" rel="noopener">查看报告 PDF</a></p>
+      {% elif s.published and s.content %}
         <p style="margin:10px 0 0;font-size:13.5px;color:var(--ink-soft);">{{ s.content }}</p>
       {% else %}
         <p class="cell-sub" style="margin-top:10px;">尚未开展 / 报告未发布</p>

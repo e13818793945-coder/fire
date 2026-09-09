@@ -10,16 +10,26 @@
   <div class="card card-pad" style="margin-bottom:14px;">
     <div style="font-weight:600;font-size:13.5px;margin-bottom:10px;">第 {{ s.seq }} 场沙龙 · {{ s.date or '日期待定' }}</div>
     {% if agents %}
-      <form method="post" action="{{ url_for('pm_salon_save', session_id=s.id) }}">
+      <form method="post" action="{{ url_for('pm_salon_save', session_id=s.id) }}" enctype="multipart/form-data">
         <div class="table-wrap">
           <table class="dtable">
-            <thead><tr><th style="width:120px;">代理人</th><th>陪谈记录</th><th style="width:80px;">已陪谈</th></tr></thead>
+            <thead><tr><th style="width:120px;">代理人</th><th>陪谈报告（小工具生成的 PDF）</th><th style="width:80px;">已陪谈</th></tr></thead>
             <tbody>
             {% for a in agents %}
               {% set n = notes.get((s.id, a.id)) %}
               <tr>
                 <td class="cell-name">{{ a.display_name }}</td>
-                <td><input type="text" name="note_{{ a.id }}" value="{{ n.note if n else '' }}" placeholder="陪谈要点"></td>
+                <td>
+                  {% if n and n.pdf_filename %}
+                    <div class="cell-sub" style="margin-bottom:6px;">
+                      已上传：<a href="{{ url_for('pm_salon_pdf', session_id=s.id, agent_id=a.id) }}" target="_blank" rel="noopener">{{ n.pdf_original_name or '查看 PDF' }}</a>
+                      <button class="btn btn-sm" type="submit" form="salon-pdf-remove-{{ s.id }}-{{ a.id }}" style="margin-left:8px;">移除</button>
+                    </div>
+                  {% elif n and n.note %}
+                    <div class="cell-sub" style="margin-bottom:6px;">旧版文本记录（未上传 PDF）：{{ n.note }}</div>
+                  {% endif %}
+                  <input type="file" name="pdf_{{ a.id }}" accept="application/pdf">
+                </td>
                 <td style="text-align:center;"><input type="checkbox" name="present_{{ a.id }}" {{ 'checked' if n and n.present else '' }} style="width:auto;"></td>
               </tr>
             {% endfor %}
@@ -30,6 +40,9 @@
           <button class="btn btn-primary btn-sm" type="submit">保存本场记录</button>
         </div>
       </form>
+      {% for a in agents %}
+        <form id="salon-pdf-remove-{{ s.id }}-{{ a.id }}" method="post" action="{{ url_for('pm_salon_pdf_remove', session_id=s.id, agent_id=a.id) }}" style="display:none;"></form>
+      {% endfor %}
     {% else %}
       <p class="empty-note">请先在系统管理中创建代理人账号。</p>
     {% endif %}

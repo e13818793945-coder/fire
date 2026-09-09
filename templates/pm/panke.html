@@ -8,11 +8,24 @@
 
   {% for s in sessions %}
   <div class="card card-pad" style="margin-bottom:14px;">
-    <form method="post" action="{{ url_for('pm_panke_update', session_id=s.id) }}">
+    <form method="post" action="{{ url_for('pm_panke_update', session_id=s.id) }}" enctype="multipart/form-data">
       <div class="form-grid">
         <div><label class="flabel">第 {{ s.seq }} 次 · 日期</label><input type="text" name="date" value="{{ s.date }}" placeholder="如 2026-09-25"></div>
         <div><label class="flabel">主题</label><input type="text" name="focus" value="{{ s.focus }}" placeholder="如 A 类客户盘客"></div>
-        <div class="full"><label class="flabel">报告内容</label><textarea name="content" placeholder="录入本次盘客报告内容…">{{ s.content }}</textarea></div>
+        <div class="full">
+          <label class="flabel">报告内容（小工具生成的 PDF，上传后可点击查看）</label>
+          {% if s.pdf_filename %}
+            <p class="cell-sub" style="margin-bottom:8px;">
+              已上传：<a href="{{ url_for('pm_panke_pdf', session_id=s.id) }}" target="_blank" rel="noopener">{{ s.pdf_original_name or '查看 PDF' }}</a>
+              <button class="btn btn-sm" type="submit" form="panke-pdf-remove-{{ s.id }}" style="margin-left:8px;">移除</button>
+            </p>
+          {% elif s.content %}
+            <p class="cell-sub" style="margin-bottom:8px;">旧版文本记录（未上传 PDF）：{{ s.content }}</p>
+          {% else %}
+            <p class="cell-sub" style="margin-bottom:8px;">尚未上传报告</p>
+          {% endif %}
+          <input type="file" name="pdf" accept="application/pdf">
+        </div>
       </div>
       <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;">
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-soft);">
@@ -21,6 +34,7 @@
         <button class="btn btn-primary btn-sm" type="submit">保存</button>
       </div>
     </form>
+    <form id="panke-pdf-remove-{{ s.id }}" method="post" action="{{ url_for('pm_panke_pdf_remove', session_id=s.id) }}" style="display:none;"></form>
 
     {% if agents %}
     <div style="height:14px;"></div>

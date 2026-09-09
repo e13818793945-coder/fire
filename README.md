@@ -5,7 +5,7 @@
 - **系统管理员**：创建/启用/禁用账号、重置密码、系统设置、操作日志
 - **代理人**：录入自有存量客户 → 系统自动生成 KYC 报告；双周提交经营动态（含新单件数/保费/FYC/转介绍数量）；查看教练反馈；查看集中辅导会总结、盘客报告；查看个人成长报告
 - **教练**：查看学员经营动态，提交诊断反馈
-- **项目经理**：开启经营动态周期、录入集中辅导会/盘客报告（含出勤）、录入沙龙 1&1 陪谈、录入代理人成长报告与结业报告（可用 AI 基于系统统计数据一键生成草稿，再人工审核发布）。孤儿单客户的分配改为线下完成，不在系统内操作
+- **项目经理**：开启经营动态周期、上传集中辅导会/盘客报告 PDF（含出勤）、上传沙龙 1&1 陪谈报告 PDF、录入代理人成长报告与结业报告（可用 AI 基于系统统计数据一键生成草稿，再人工审核发布）。孤儿单客户的分配改为线下完成，不在系统内操作
 - **保司内勤**：以上全部内容的只读视图
 
 技术选型：Python + Flask + 原生 sqlite3（不依赖 ORM，单文件数据库，便于在自建 Ubuntu 服务器上直接运行和备份）。前端为服务端渲染的 Jinja2 模板，视觉延续此前 Demo 的苹果极简风格，无需单独构建前端。
@@ -44,6 +44,7 @@ python3 app.py
    export COACHING_ADMIN_USER="admin"        # 可选，首次建库时的管理员账号
    export COACHING_ADMIN_PASS="换一个强密码"  # 首次建库时的管理员密码
    export COACHING_DB_PATH="/opt/coaching-platform/data/coaching.db"
+   export COACHING_UPLOAD_DIR="/opt/coaching-platform/data/uploads"  # 可选，不设置则默认用 COACHING_DB_PATH 同目录下的 uploads/
    export MINIMAX_API_KEY="你的 MiniMax API Key"       # 可选，不配置则「AI 生成草稿」按钮会报错提示未配置
    export MINIMAX_MODEL="MiniMax-Text-01"              # 可选，按账号可用模型调整
    ```
@@ -51,6 +52,8 @@ python3 app.py
 
    成长报告改成五维打分（客户经营能力/KYC应用能力/活动量达成/业绩转化能力/转介绍开发），其中「活动量达成」有真实完成率可以自动算；「客户经营能力」「业绩转化能力」「转介绍开发」因为公司还没定统一的目标基准数字，系统给的是跟本期学员里最高值相比的相对分，不是对绝对目标的完成率——等定了具体目标（比如每人每期至少多少件新单），可以把 `compute_growth_score_suggestions()` 里的相对分改成目标完成率。「KYC应用能力」现状下每个客户都会自动生成报告、覆盖率恒为 100%，没有区分度，没有自动建议分，只能人工评。
    建议写入 `/etc/systemd/system/coaching-platform.service` 的 `Environment=` 中（见下）。
+
+   集中辅导会总结/盘客报告/沙龙 1&1 陪谈报告，都是项目经理用外部小工具生成 PDF 后，在系统里手动上传（不再是系统内手打文字），上传后代理人/保司内勤点击链接即可在浏览器内直接打开查看，不会强制下载。上传文件仅限 `.pdf`，单个不超过 20MB；存储位置默认是 `COACHING_DB_PATH` 同一目录下的 `uploads/` 子目录（和 sqlite 文件一样落在同一块持久盘上），也可以用 `COACHING_UPLOAD_DIR` 单独指定一个目录。历史版本手打的文字内容字段还留在数据库里，没有 PDF 但有旧文字的场次会在页面上继续显示旧文字作为兜底，不会丢数据。
 
 4. **用 gunicorn 启动**（不要用 `python3 app.py` 的开发服务器跑生产流量）
    ```bash
@@ -99,9 +102,10 @@ python3 app.py
    ```
    系统必须部署在 HTTPS 之后再对外使用——账号密码目前以明文表单提交，没有 HTTPS 等于在网络上裸奔。
 
-7. **数据备份**：`coaching.db` 是唯一的数据文件，建议加一条 crontab 每天复制一份到别处：
+7. **数据备份**：`coaching.db` 加上 `uploads/` 目录（各类报告 PDF）是全部数据，建议加一条 crontab 每天复制一份到别处：
    ```
    0 2 * * * cp /opt/coaching-platform/data/coaching.db /opt/coaching-platform/backup/coaching-$(date +\%F).db
+   0 2 * * * rsync -a /opt/coaching-platform/data/uploads/ /opt/coaching-platform/backup/uploads-$(date +\%F)/
    ```
    系统设置里的「数据自动备份」开关目前只记录这个配置意图，实际备份任务需要按上面这条 crontab 手动启用。
 

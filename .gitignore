@@ -2,5 +2,7 @@ __pycache__/
 *.pyc
 venv/
 coaching.db
+coaching.db.init.lock
+uploads/
 server.log
 .env

@@ -17,7 +17,15 @@
           {% set n = notes.get((s.id, a.id)) %}
           <tr>
             <td class="cell-name">{{ a.display_name }}</td>
-            <td>{{ n.note if n and n.note else '—' }}</td>
+            <td>
+              {% if n and n.pdf_filename %}
+                <a href="{{ url_for('insurer_salon_pdf', session_id=s.id, agent_id=a.id) }}" target="_blank" rel="noopener">查看陪谈报告 PDF</a>
+              {% elif n and n.note %}
+                {{ n.note }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
             <td>{% if n and n.present %}<span class="badge badge-done">已陪谈</span>{% else %}<span class="badge badge-off">未开始</span>{% endif %}</td>
           </tr>
         {% endfor %}

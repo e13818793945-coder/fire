@@ -75,12 +75,14 @@ CREATE TABLE IF NOT EXISTS coach_feedback (
 );
 
 CREATE TABLE IF NOT EXISTS central_sessions (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    seq       INTEGER NOT NULL,
-    date      TEXT,
-    title     TEXT,
-    summary   TEXT,
-    published INTEGER NOT NULL DEFAULT 0
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    seq               INTEGER NOT NULL,
+    date              TEXT,
+    title             TEXT,
+    summary           TEXT,
+    pdf_filename      TEXT,
+    pdf_original_name TEXT,
+    published         INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS central_attendance (
@@ -92,12 +94,14 @@ CREATE TABLE IF NOT EXISTS central_attendance (
 );
 
 CREATE TABLE IF NOT EXISTS panke_sessions (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    seq       INTEGER NOT NULL,
-    date      TEXT,
-    focus     TEXT,
-    content   TEXT,
-    published INTEGER NOT NULL DEFAULT 0
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    seq               INTEGER NOT NULL,
+    date              TEXT,
+    focus             TEXT,
+    content           TEXT,
+    pdf_filename      TEXT,
+    pdf_original_name TEXT,
+    published         INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS panke_attendance (
@@ -115,11 +119,13 @@ CREATE TABLE IF NOT EXISTS salon_sessions (
 );
 
 CREATE TABLE IF NOT EXISTS salon_notes (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER NOT NULL REFERENCES salon_sessions(id),
-    agent_id   INTEGER NOT NULL REFERENCES users(id),
-    note       TEXT,
-    present    INTEGER NOT NULL DEFAULT 0,
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id        INTEGER NOT NULL REFERENCES salon_sessions(id),
+    agent_id          INTEGER NOT NULL REFERENCES users(id),
+    note              TEXT,
+    pdf_filename      TEXT,
+    pdf_original_name TEXT,
+    present           INTEGER NOT NULL DEFAULT 0,
     UNIQUE(session_id, agent_id)
 );
 
