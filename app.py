@@ -9,6 +9,7 @@ from db import get_db, now_iso, today, get_setting, set_setting, log_action
 from auth import load_logged_in_user, login_required, role_required, ROLE_LABEL, ROLE_HOME, all_agents
 from kyc import generate_kyc_text, TIER_CHOICES, AGE_CHOICES, FAMILY_CHOICES, INCOME_CHOICES
 from werkzeug.security import generate_password_hash, check_password_hash
+import ai_report
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("COACHING_SECRET_KEY", "dev-secret-change-me")
@@ -823,6 +824,82 @@ def pm_salon_save(session_id):
     return redirect(url_for("pm_salon"))
 
 
+def compute_agent_metrics(db, agent_id):
+    """给 AI 生成成长报告用的结构化统计——全部是数字，不含任何客户或文本原文。"""
+    tiers = {"A": 0, "B": 0, "C": 0}
+    for row in db.execute("SELECT tier, COUNT(*) as c FROM clients WHERE agent_id=? GROUP BY tier", (agent_id,)).fetchall():
+        tiers[row["tier"]] = row["c"]
+    kyc_count = db.execute(
+        "SELECT COUNT(*) as c FROM kyc_reports k JOIN clients cl ON cl.id=k.client_id WHERE cl.agent_id=?", (agent_id,)
+    ).fetchone()["c"]
+    econ_total = db.execute("SELECT COUNT(*) as c FROM econ_periods").fetchone()["c"]
+    econ_submitted = db.execute("SELECT COUNT(*) as c FROM econ_updates WHERE agent_id=?", (agent_id,)).fetchone()["c"]
+    feedback_count = db.execute(
+        "SELECT COUNT(*) as c FROM coach_feedback cf JOIN econ_updates eu ON eu.id=cf.econ_update_id WHERE eu.agent_id=?",
+        (agent_id,),
+    ).fetchone()["c"]
+    central_total = db.execute("SELECT COUNT(*) as c FROM central_sessions").fetchone()["c"]
+    central_present = db.execute(
+        "SELECT COUNT(*) as c FROM central_attendance WHERE agent_id=? AND present=1", (agent_id,)
+    ).fetchone()["c"]
+    panke_total = db.execute("SELECT COUNT(*) as c FROM panke_sessions").fetchone()["c"]
+    panke_present = db.execute(
+        "SELECT COUNT(*) as c FROM panke_attendance WHERE agent_id=? AND present=1", (agent_id,)
+    ).fetchone()["c"]
+    salon_total = db.execute("SELECT COUNT(*) as c FROM salon_sessions").fetchone()["c"]
+    salon_present = db.execute(
+        "SELECT COUNT(*) as c FROM salon_notes WHERE agent_id=? AND present=1", (agent_id,)
+    ).fetchone()["c"]
+    return {
+        "tier_a": tiers["A"], "tier_b": tiers["B"], "tier_c": tiers["C"],
+        "kyc_count": kyc_count,
+        "econ_total": econ_total, "econ_submitted": econ_submitted,
+        "feedback_count": feedback_count,
+        "central_total": central_total, "central_present": central_present,
+        "panke_total": panke_total, "panke_present": panke_present,
+        "salon_total": salon_total, "salon_present": salon_present,
+    }
+
+
+def compute_final_summary(db):
+    """给 AI 生成结业报告用的全员汇总统计。"""
+    agents = all_agents(db)
+    if not agents:
+        return None
+    per_agent = []
+    for a in agents:
+        m = compute_agent_metrics(db, a["id"])
+        econ_rate = (m["econ_submitted"] / m["econ_total"]) if m["econ_total"] else 0
+        feedback_rate = (m["feedback_count"] / m["econ_submitted"]) if m["econ_submitted"] else 0
+        central_rate = (m["central_present"] / m["central_total"]) if m["central_total"] else 0
+        panke_rate = (m["panke_present"] / m["panke_total"]) if m["panke_total"] else 0
+        salon_rate = (m["salon_present"] / m["salon_total"]) if m["salon_total"] else 0
+        attendance_pool = [r for r, t in ((central_rate, m["central_total"]), (panke_rate, m["panke_total"]), (salon_rate, m["salon_total"])) if t]
+        overall_attendance = sum(attendance_pool) / len(attendance_pool) if attendance_pool else 0
+        per_agent.append({
+            "name": a["display_name"], "metrics": m,
+            "econ_rate": econ_rate, "feedback_rate": feedback_rate,
+            "central_rate": central_rate, "panke_rate": panke_rate, "salon_rate": salon_rate,
+            "overall_attendance": overall_attendance,
+        })
+    n = len(per_agent)
+    avg = lambda key: sum(p[key] for p in per_agent) / n
+    top = max(per_agent, key=lambda p: p["overall_attendance"])
+    return {
+        "agent_count": n,
+        "avg_tier_a": sum(p["metrics"]["tier_a"] for p in per_agent) / n,
+        "avg_tier_b": sum(p["metrics"]["tier_b"] for p in per_agent) / n,
+        "avg_tier_c": sum(p["metrics"]["tier_c"] for p in per_agent) / n,
+        "avg_econ_rate": avg("econ_rate"),
+        "avg_feedback_rate": avg("feedback_rate"),
+        "avg_central_rate": avg("central_rate"),
+        "avg_panke_rate": avg("panke_rate"),
+        "avg_salon_rate": avg("salon_rate"),
+        "top_attendance_name": top["name"],
+        "top_attendance_rate": top["overall_attendance"],
+    }
+
+
 @app.route("/pm/growth")
 @role_required("pm")
 def pm_growth():
@@ -875,6 +952,42 @@ def pm_growth_save(agent_id):
     return redirect(url_for("pm_growth"))
 
 
+@app.route("/pm/growth/<int:agent_id>/ai_draft", methods=["POST"])
+@role_required("pm")
+def pm_growth_ai_draft(agent_id):
+    db = get_db()
+    agent = db.execute("SELECT * FROM users WHERE id=? AND role='agent'", (agent_id,)).fetchone()
+    if agent is None:
+        abort(404)
+    metrics = compute_agent_metrics(db, agent_id)
+    try:
+        narrative = ai_report.generate_growth_narrative(agent["display_name"], metrics)
+    except ai_report.AIReportError as e:
+        flash(f"AI 生成失败：{e}", "error")
+        return redirect(url_for("pm_growth_edit", agent_id=agent_id))
+
+    row = db.execute("SELECT * FROM growth_reports WHERE agent_id=?", (agent_id,)).fetchone()
+    was_published = bool(row and row["status"] == "published")
+    if row:
+        # AI 重新生成会改动评语内容，一律打回草稿，需要项目经理重新确认发布，不悄悄覆盖已发布内容
+        db.execute(
+            "UPDATE growth_reports SET narrative=?, status='draft', updated_at=? WHERE id=?",
+            (narrative, now_iso(), row["id"]),
+        )
+    else:
+        db.execute(
+            "INSERT INTO growth_reports (agent_id, metrics_json, narrative, status, updated_at) VALUES (?,?,?,?,?)",
+            (agent_id, json.dumps({}, ensure_ascii=False), narrative, "draft", now_iso()),
+        )
+    db.commit()
+    log_action(g.user, "AI生成成长报告草稿", f"agent={agent_id}")
+    if was_published:
+        flash("AI 已生成新的评语草稿，原已发布内容已被替换为草稿，请检查后重新发布", "ok")
+    else:
+        flash("AI 已生成评语草稿，请检查修改后再保存/发布", "ok")
+    return redirect(url_for("pm_growth_edit", agent_id=agent_id))
+
+
 @app.route("/pm/final")
 @role_required("pm")
 def pm_final():
@@ -893,6 +1006,32 @@ def pm_final_save():
     db.commit()
     log_action(g.user, "更新结业报告", f"published={published}")
     flash("结业报告已保存", "ok")
+    return redirect(url_for("pm_final"))
+
+
+@app.route("/pm/final/ai_draft", methods=["POST"])
+@role_required("pm")
+def pm_final_ai_draft():
+    db = get_db()
+    summary = compute_final_summary(db)
+    if summary is None:
+        flash("暂无代理人账号，无法生成结业报告", "error")
+        return redirect(url_for("pm_final"))
+    try:
+        content = ai_report.generate_final_report_narrative(summary)
+    except ai_report.AIReportError as e:
+        flash(f"AI 生成失败：{e}", "error")
+        return redirect(url_for("pm_final"))
+
+    row = db.execute("SELECT * FROM final_report WHERE id=1").fetchone()
+    was_published = bool(row and row["published"])
+    db.execute("UPDATE final_report SET content=?, published=0, updated_at=? WHERE id=1", (content, now_iso()))
+    db.commit()
+    log_action(g.user, "AI生成结业报告草稿", "")
+    if was_published:
+        flash("AI 已生成新的结业报告草稿，原已发布内容已被替换为草稿，请检查后重新发布", "ok")
+    else:
+        flash("AI 已生成结业报告草稿，请检查修改后再发布", "ok")
     return redirect(url_for("pm_final"))
 
 

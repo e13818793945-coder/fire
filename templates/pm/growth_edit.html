@@ -6,6 +6,9 @@
 <section class="block">
   <div class="block-head"><div><h2>{{ agent.display_name }}</h2></div></div>
   <div class="card card-pad">
+    <form method="post" action="{{ url_for('pm_growth_ai_draft', agent_id=agent.id) }}" style="margin-bottom:16px;">
+      <button class="btn btn-sm" type="submit">AI 生成评语草稿（基于系统统计数据，不含客户或经营动态原文）</button>
+    </form>
     <form method="post" action="{{ url_for('pm_growth_save', agent_id=agent.id) }}">
       <div class="form-grid">
         {% for d in dims %}
