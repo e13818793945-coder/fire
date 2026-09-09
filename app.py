@@ -872,15 +872,47 @@ def compute_live_five_dims(db, agent_id):
     ]
 
 
-def render_radar_svg(dims, size=280):
-    """把 [{'label':..,'value':0-100}, ...] 画成一张五边形雷达图 SVG（纯服务端拼字符串，不依赖前端库）。"""
+def _text_width(s, font_size):
+    """粗略估算一段文字的渲染宽度：中文/全角字符按 1 个字宽算，其余（字母数字括号）按 0.58 个字宽算。
+    只用来给 SVG 画布留够边距，不追求逐像素精确。"""
+    return sum(1.0 if ord(ch) > 0x2E7F else 0.58 for ch in s) * font_size
+
+
+def render_radar_svg(dims):
+    """把 [{'label':..,'value':0-100}, ...] 画成一张五边形雷达图 SVG（纯服务端拼字符串，不依赖前端库）。
+    轴标签只放维度名（分数已经在下方进度条里显示，避免文字太长）；画布尺寸按标签的实际估算宽度
+    动态算出留白，而不是写死一个 margin——写死的话中文标签一长就会被 SVG 默认的 viewBox 裁切掉。"""
     n = len(dims)
-    cx = cy = size / 2
-    r = size / 2 - 58  # 给外圈标签留边距
+    font_size = 12.5
+    line_h = 15  # 单行文字的纵向留白
+    gap = 10  # 轴线端点到文字锚点的间距
+    r = 92  # 雷达网格半径（像素），标签锚点在此基础上再加 gap
+
+    angles = [-math.pi / 2 + i * (2 * math.pi / n) for i in range(n)]
+    anchor_r = r + gap
+
+    need_left = need_right = need_top = need_bottom = r + gap
+    for ang, d in zip(angles, dims):
+        ux, uy = math.cos(ang), math.sin(ang)
+        px, py = anchor_r * ux, anchor_r * uy
+        w = _text_width(d["label"], font_size)
+        if abs(ux) < 0.35:  # 接近正上/正下方向，文字居中对齐
+            need_right = max(need_right, px + w / 2)
+            need_left = max(need_left, w / 2 - px)
+        elif ux > 0:  # 锚点在右半边，文字从锚点往右延伸
+            need_right = max(need_right, px + w)
+        else:  # 锚点在左半边，文字从锚点往左延伸
+            need_left = max(need_left, w - px)
+        need_bottom = max(need_bottom, py + line_h) if uy > 0 else need_bottom
+        need_top = max(need_top, line_h - py) if uy < 0 else need_top
+
+    half_w = max(need_left, need_right) + gap
+    half_h = max(need_top, need_bottom) + gap
+    cx, cy = half_w, half_h
+    width, height = half_w * 2, half_h * 2
 
     def point(i, frac):
-        angle = -math.pi / 2 + i * (2 * math.pi / n)
-        return cx + r * frac * math.cos(angle), cy + r * frac * math.sin(angle)
+        return cx + r * frac * math.cos(angles[i]), cy + r * frac * math.sin(angles[i])
 
     rings = []
     for frac in (0.25, 0.5, 0.75, 1.0):
@@ -892,15 +924,12 @@ def render_radar_svg(dims, size=280):
     for i, d in enumerate(dims):
         x, y = point(i, 1.0)
         axes.append(f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{x:.1f}" y2="{y:.1f}" style="stroke:var(--border);stroke-width:1"/>')
-        lx, ly = point(i, 1.28)
-        anchor = "middle"
-        if lx < cx - 6:
-            anchor = "end"
-        elif lx > cx + 6:
-            anchor = "start"
+        ux = math.cos(angles[i])
+        lx, ly = cx + anchor_r * ux, cy + anchor_r * math.sin(angles[i])
+        anchor = "middle" if abs(ux) < 0.35 else ("start" if ux > 0 else "end")
         labels.append(
-            f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="12" style="fill:var(--ink-soft)" '
-            f'text-anchor="{anchor}" dominant-baseline="middle">{d["label"]}（{d["value"]}）</text>'
+            f'<text x="{lx:.1f}" y="{ly:.1f}" font-size="{font_size}" style="fill:var(--ink-soft)" '
+            f'text-anchor="{anchor}" dominant-baseline="middle">{d["label"]}</text>'
         )
 
     clamped = [max(0, min(100, d["value"])) for d in dims]
@@ -911,8 +940,8 @@ def render_radar_svg(dims, size=280):
         for x, y in (point(i, v / 100) for i, v in enumerate(clamped))
     )
     return (
-        f'<svg viewBox="0 0 {size} {size}" width="100%" height="auto" role="img" '
-        f'aria-label="五维数据雷达图" style="max-width:360px;display:block;margin:0 auto;">'
+        f'<svg viewBox="0 0 {width:.1f} {height:.1f}" width="100%" height="auto" role="img" '
+        f'aria-label="五维数据雷达图" style="max-width:380px;display:block;margin:0 auto;">'
         + "".join(rings) + "".join(axes) + data_polygon + dots + "".join(labels)
         + "</svg>"
     )
