@@ -54,11 +54,26 @@ def init_app(app):
             fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
+def _ensure_column(db, table, column, ddl):
+    """给已经存在的表补列——schema.sql 里的 CREATE TABLE IF NOT EXISTS 对已建好的表是空操作，
+    生产库升级新字段必须靠 ALTER TABLE，这里做成幂等的补丁，重复运行也不会报错。"""
+    cols = [r["name"] for r in db.execute(f"PRAGMA table_info({table})").fetchall()]
+    if column not in cols:
+        db.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
+
 def init_db():
     """建表 + 首次运行的种子数据：管理员账号、3+6+3 场次占位、默认系统设置、第 1 期经营动态周期。"""
     db = get_db()
     with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
         db.executescript(f.read())
+
+    # 补丁：老库升级到「业绩/转介绍上报」字段
+    _ensure_column(db, "econ_updates", "new_policies_count", "new_policies_count INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(db, "econ_updates", "premium_amount", "premium_amount REAL NOT NULL DEFAULT 0")
+    _ensure_column(db, "econ_updates", "fyc_amount", "fyc_amount REAL NOT NULL DEFAULT 0")
+    _ensure_column(db, "econ_updates", "referral_count", "referral_count INTEGER NOT NULL DEFAULT 0")
+    db.commit()
 
     # 种子：系统管理员账号（仅在用户表为空时创建，避免覆盖已有账号）
     row = db.execute("SELECT COUNT(*) c FROM users").fetchone()

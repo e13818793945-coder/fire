@@ -75,6 +75,10 @@ def build_growth_prompt(agent_name, metrics):
         f"- 集中辅导会出勤：{metrics['central_present']}/{metrics['central_total']}",
         f"- 盘客辅导出勤：{metrics['panke_present']}/{metrics['panke_total']}",
         f"- 沙龙 1v1 出勤：{metrics['salon_present']}/{metrics['salon_total']}",
+        f"- 累计新单件数：{metrics['policies']}",
+        f"- 累计保费：{metrics['premium']}",
+        f"- 累计 FYC：{metrics['fyc']}",
+        f"- 累计转介绍数量：{metrics['referrals']}",
     ]
     return [{"role": "user", "content": "\n".join(lines)}]
 
@@ -95,6 +99,10 @@ def build_final_report_prompt(summary):
         f"- 平均集中辅导会出勤率：{summary['avg_central_rate']:.0%}",
         f"- 平均盘客辅导出勤率：{summary['avg_panke_rate']:.0%}",
         f"- 平均沙龙 1v1 出勤率：{summary['avg_salon_rate']:.0%}",
+        f"- 全员累计新单件数：{summary['total_policies']}",
+        f"- 全员累计保费：{summary['total_premium']}",
+        f"- 全员累计 FYC：{summary['total_fyc']}",
+        f"- 全员累计转介绍数量：{summary['total_referrals']}",
         f"- 出勤率最高的学员：{summary['top_attendance_name']}（{summary['top_attendance_rate']:.0%}）",
     ]
     return [{"role": "user", "content": "\n".join(lines)}]

@@ -276,13 +276,39 @@ def agent_econ_submit():
     if not content:
         flash("请填写本期经营动态", "error")
         return redirect(url_for("agent_econ"))
+
+    def _non_negative_int(name):
+        try:
+            v = int(request.form.get(name, "0") or "0")
+        except ValueError:
+            v = 0
+        return max(0, v)
+
+    def _non_negative_float(name):
+        try:
+            v = float(request.form.get(name, "0") or "0")
+        except ValueError:
+            v = 0.0
+        return max(0.0, v)
+
+    new_policies_count = _non_negative_int("new_policies_count")
+    premium_amount = _non_negative_float("premium_amount")
+    fyc_amount = _non_negative_float("fyc_amount")
+    referral_count = _non_negative_int("referral_count")
+
     existing = db.execute("SELECT * FROM econ_updates WHERE period_id=? AND agent_id=?", (current["id"], g.user["id"])).fetchone()
     if existing:
-        db.execute("UPDATE econ_updates SET content=?, submitted_at=? WHERE id=?", (content, now_iso(), existing["id"]))
+        db.execute(
+            """UPDATE econ_updates SET content=?, new_policies_count=?, premium_amount=?, fyc_amount=?,
+               referral_count=?, submitted_at=? WHERE id=?""",
+            (content, new_policies_count, premium_amount, fyc_amount, referral_count, now_iso(), existing["id"]),
+        )
     else:
         db.execute(
-            "INSERT INTO econ_updates (period_id, agent_id, content, submitted_at) VALUES (?,?,?,?)",
-            (current["id"], g.user["id"], content, now_iso()),
+            """INSERT INTO econ_updates
+               (period_id, agent_id, content, new_policies_count, premium_amount, fyc_amount, referral_count, submitted_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (current["id"], g.user["id"], content, new_policies_count, premium_amount, fyc_amount, referral_count, now_iso()),
         )
     db.commit()
     log_action(g.user, "提交经营动态", f"第{current['seq']}期")
@@ -850,6 +876,12 @@ def compute_agent_metrics(db, agent_id):
     salon_present = db.execute(
         "SELECT COUNT(*) as c FROM salon_notes WHERE agent_id=? AND present=1", (agent_id,)
     ).fetchone()["c"]
+    perf = db.execute(
+        """SELECT COALESCE(SUM(new_policies_count),0) as policies, COALESCE(SUM(premium_amount),0) as premium,
+           COALESCE(SUM(fyc_amount),0) as fyc, COALESCE(SUM(referral_count),0) as referrals
+           FROM econ_updates WHERE agent_id=?""",
+        (agent_id,),
+    ).fetchone()
     return {
         "tier_a": tiers["A"], "tier_b": tiers["B"], "tier_c": tiers["C"],
         "kyc_count": kyc_count,
@@ -858,6 +890,68 @@ def compute_agent_metrics(db, agent_id):
         "central_total": central_total, "central_present": central_present,
         "panke_total": panke_total, "panke_present": panke_present,
         "salon_total": salon_total, "salon_present": salon_present,
+        "policies": perf["policies"], "premium": perf["premium"],
+        "fyc": perf["fyc"], "referrals": perf["referrals"],
+    }
+
+
+def compute_cohort_maxes(db):
+    """五维打分里「客户经营能力/业绩转化能力/转介绍开发」目前没有公司统一的目标基准数字
+    （验收口径里的成功判据还没定），只能算成「跟同期学员里最高值相比」的相对分，
+    不是对绝对目标的完成率——等公司定了具体目标数字，这里可以直接换成目标完成率。"""
+    agents = all_agents(db)
+    max_client_raw = max_policies = max_premium = max_fyc = max_referrals = 0
+    for a in agents:
+        m = compute_agent_metrics(db, a["id"])
+        client_raw = m["tier_a"] * 3 + m["tier_b"] * 2 + m["tier_c"] * 1
+        max_client_raw = max(max_client_raw, client_raw)
+        max_policies = max(max_policies, m["policies"])
+        max_premium = max(max_premium, m["premium"])
+        max_fyc = max(max_fyc, m["fyc"])
+        max_referrals = max(max_referrals, m["referrals"])
+    return {
+        "max_client_raw": max_client_raw,
+        "max_policies": max_policies, "max_premium": max_premium,
+        "max_fyc": max_fyc, "max_referrals": max_referrals,
+    }
+
+
+def compute_growth_score_suggestions(db, agent_id):
+    """成长报告四个可计算维度的建议分（0-100），供项目经理/教练参考，不会自动写入已保存的分数。
+    「KYC应用能力」现状下每个客户都会自动生成报告、覆盖率恒为 100%，没有区分度，不给建议分，只能人工评。"""
+    m = compute_agent_metrics(db, agent_id)
+    maxes = compute_cohort_maxes(db)
+
+    attendance_rates = []
+    if m["central_total"]:
+        attendance_rates.append(m["central_present"] / m["central_total"])
+    if m["panke_total"]:
+        attendance_rates.append(m["panke_present"] / m["panke_total"])
+    if m["salon_total"]:
+        attendance_rates.append(m["salon_present"] / m["salon_total"])
+    attendance_rate = sum(attendance_rates) / len(attendance_rates) if attendance_rates else 0
+    econ_rate = (m["econ_submitted"] / m["econ_total"]) if m["econ_total"] else 0
+    activity_score = round(100 * (attendance_rate * 0.5 + econ_rate * 0.5))
+
+    client_raw = m["tier_a"] * 3 + m["tier_b"] * 2 + m["tier_c"] * 1
+    client_score = round(100 * client_raw / maxes["max_client_raw"]) if maxes["max_client_raw"] else 0
+
+    perf_components = []
+    if maxes["max_policies"]:
+        perf_components.append(m["policies"] / maxes["max_policies"])
+    if maxes["max_premium"]:
+        perf_components.append(m["premium"] / maxes["max_premium"])
+    if maxes["max_fyc"]:
+        perf_components.append(m["fyc"] / maxes["max_fyc"])
+    perf_score = round(100 * sum(perf_components) / len(perf_components)) if perf_components else 0
+
+    referral_score = round(100 * m["referrals"] / maxes["max_referrals"]) if maxes["max_referrals"] else 0
+
+    return {
+        "客户经营能力": client_score,
+        "活动量达成": activity_score,
+        "业绩转化能力": perf_score,
+        "转介绍开发": referral_score,
     }
 
 
@@ -895,6 +989,10 @@ def compute_final_summary(db):
         "avg_central_rate": avg("central_rate"),
         "avg_panke_rate": avg("panke_rate"),
         "avg_salon_rate": avg("salon_rate"),
+        "total_policies": sum(p["metrics"]["policies"] for p in per_agent),
+        "total_premium": sum(p["metrics"]["premium"] for p in per_agent),
+        "total_fyc": sum(p["metrics"]["fyc"] for p in per_agent),
+        "total_referrals": sum(p["metrics"]["referrals"] for p in per_agent),
         "top_attendance_name": top["name"],
         "top_attendance_rate": top["overall_attendance"],
     }
@@ -918,15 +1016,16 @@ def pm_growth_edit(agent_id):
         abort(404)
     report = db.execute("SELECT * FROM growth_reports WHERE agent_id=?", (agent_id,)).fetchone()
     metrics = json.loads(report["metrics_json"]) if report else {}
-    dims = ["客户经营能力", "KYC应用能力", "活动量达成", "转介绍开发"]
-    return render("pm/growth_edit.html", agent=agent, report=report, metrics=metrics, dims=dims)
+    dims = ["客户经营能力", "KYC应用能力", "活动量达成", "业绩转化能力", "转介绍开发"]
+    suggestions = compute_growth_score_suggestions(db, agent_id)
+    return render("pm/growth_edit.html", agent=agent, report=report, metrics=metrics, dims=dims, suggestions=suggestions)
 
 
 @app.route("/pm/growth/<int:agent_id>/save", methods=["POST"])
 @role_required("pm")
 def pm_growth_save(agent_id):
     db = get_db()
-    dims = ["客户经营能力", "KYC应用能力", "活动量达成", "转介绍开发"]
+    dims = ["客户经营能力", "KYC应用能力", "活动量达成", "业绩转化能力", "转介绍开发"]
     metrics = {}
     for d in dims:
         try:

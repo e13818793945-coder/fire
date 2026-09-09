@@ -54,11 +54,15 @@ CREATE TABLE IF NOT EXISTS econ_periods (
 );
 
 CREATE TABLE IF NOT EXISTS econ_updates (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    period_id    INTEGER NOT NULL REFERENCES econ_periods(id),
-    agent_id     INTEGER NOT NULL REFERENCES users(id),
-    content      TEXT NOT NULL,
-    submitted_at TEXT NOT NULL,
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    period_id          INTEGER NOT NULL REFERENCES econ_periods(id),
+    agent_id           INTEGER NOT NULL REFERENCES users(id),
+    content            TEXT NOT NULL,
+    new_policies_count INTEGER NOT NULL DEFAULT 0,
+    premium_amount     REAL NOT NULL DEFAULT 0,
+    fyc_amount         REAL NOT NULL DEFAULT 0,
+    referral_count     INTEGER NOT NULL DEFAULT 0,
+    submitted_at       TEXT NOT NULL,
     UNIQUE(period_id, agent_id)
 );
 
