@@ -45,6 +45,19 @@ CREATE TABLE IF NOT EXISTS kyc_reports (
     generated_at TEXT NOT NULL
 );
 
+-- 客户与自动生成的 KYC 文字报告（上面两张表）已经不再使用：代理人的"我的客户"改成了
+-- 直接上传外部小工具生成的 KYC PDF，见下面的 kyc_uploads。历史数据留着不删，只是应用层不再读写。
+CREATE TABLE IF NOT EXISTS kyc_uploads (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id          INTEGER NOT NULL REFERENCES users(id),
+    slot_no           INTEGER NOT NULL CHECK(slot_no BETWEEN 1 AND 5),
+    client_code       TEXT,
+    pdf_filename      TEXT,
+    pdf_original_name TEXT,
+    uploaded_at       TEXT,
+    UNIQUE(agent_id, slot_no)
+);
+
 CREATE TABLE IF NOT EXISTS econ_periods (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     seq        INTEGER NOT NULL,
@@ -62,6 +75,7 @@ CREATE TABLE IF NOT EXISTS econ_updates (
     premium_amount     REAL NOT NULL DEFAULT 0,
     fyc_amount         REAL NOT NULL DEFAULT 0,
     referral_count     INTEGER NOT NULL DEFAULT 0,
+    client_activity_count INTEGER NOT NULL DEFAULT 0,
     submitted_at       TEXT NOT NULL,
     UNIQUE(period_id, agent_id)
 );

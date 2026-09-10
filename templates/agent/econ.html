@@ -18,6 +18,7 @@
           <div><label class="flabel">本期保费</label><input type="text" name="premium_amount" value="{{ my.premium_amount if my else 0 }}"></div>
           <div><label class="flabel">本期 FYC</label><input type="text" name="fyc_amount" value="{{ my.fyc_amount if my else 0 }}"></div>
           <div><label class="flabel">本期转介绍数量</label><input type="text" name="referral_count" value="{{ my.referral_count if my else 0 }}"></div>
+          <div><label class="flabel">本期新增/跟进客户数</label><input type="text" name="client_activity_count" value="{{ my.client_activity_count if my else 0 }}"></div>
         </div>
         <div style="margin-top:12px;display:flex;justify-content:flex-end;">
           <button class="btn btn-primary" type="submit">{{ '更新本期动态' if my else '提交本期动态' }}</button>

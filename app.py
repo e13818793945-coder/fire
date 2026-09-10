@@ -7,7 +7,6 @@ from flask import Flask, request, session, redirect, url_for, render_template, f
 import db as dbmod
 from db import get_db, now_iso, today, get_setting, set_setting, log_action
 from auth import load_logged_in_user, login_required, role_required, ROLE_LABEL, ROLE_HOME, all_agents
-from kyc import generate_kyc_text
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import ai_report
@@ -65,7 +64,7 @@ dbmod.init_app(app)
 NAV = {
     "admin": [("admin_users", "角色与权限管理"), ("admin_settings", "系统设置"), ("admin_audit_log", "操作日志")],
     "agent": [
-        ("agent_clients", "我的客户"),
+        ("agent_clients", "客户 KYC 报告"),
         ("agent_econ", "双周经营动态"),
         ("agent_feedback", "教练反馈"),
         ("agent_central", "线上辅导会总结"),
@@ -245,50 +244,77 @@ def admin_audit_log():
 
 
 # ================= 代理人 =================
+KYC_SLOT_COUNT = 5  # 每位代理人锁定 5 个 A 类重点客户，对应 5 个 KYC 上传位
+
+
+def _agent_kyc_slots(db, agent_id):
+    """返回该代理人固定的 5 个 KYC 上传位，没上传过的位用空壳数据补齐，方便模板统一渲染。"""
+    rows = {r["slot_no"]: r for r in db.execute(
+        "SELECT * FROM kyc_uploads WHERE agent_id=?", (agent_id,)
+    ).fetchall()}
+    return [rows.get(i) or {"slot_no": i, "client_code": "", "pdf_filename": None, "pdf_original_name": None} for i in range(1, KYC_SLOT_COUNT + 1)]
+
+
 @app.route("/agent/clients")
 @role_required("agent")
 def agent_clients():
     db = get_db()
-    clients = db.execute("SELECT * FROM clients WHERE agent_id=? ORDER BY created_at DESC", (g.user["id"],)).fetchall()
-    return render("agent/clients.html", clients=clients)
+    slots = _agent_kyc_slots(db, g.user["id"])
+    return render("agent/clients.html", slots=slots, slot_count=KYC_SLOT_COUNT)
 
 
-@app.route("/agent/clients/new", methods=["POST"])
+@app.route("/agent/clients/<int:slot_no>/upload", methods=["POST"])
 @role_required("agent")
-def agent_clients_new():
+def agent_kyc_upload(slot_no):
+    if not 1 <= slot_no <= KYC_SLOT_COUNT:
+        abort(404)
     db = get_db()
-    f = request.form
-    name = f.get("name", "").strip()
-    if not name:
-        flash("请填写客户编码", "error")
-        return redirect(url_for("agent_clients"))
-    ts = now_iso()
-    cur = db.execute(
-        """INSERT INTO clients (agent_id, name, phone, tier, source, age_range, family_status, income_range, existing_policies, risk_notes, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (g.user["id"], name, f.get("phone", ""), f.get("tier", "B"), "自有存量",
-         f.get("age_range", ""), f.get("family_status", ""), f.get("income_range", ""),
-         f.get("existing_policies", ""), f.get("risk_notes", ""), ts, ts),
-    )
-    client_id = cur.lastrowid
-    client = db.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
-    kyc_text = generate_kyc_text(client)
-    db.execute("INSERT INTO kyc_reports (client_id, content, generated_at) VALUES (?,?,?)", (client_id, kyc_text, now_iso()))
+    client_code = request.form.get("client_code", "").strip()
+    row = db.execute("SELECT * FROM kyc_uploads WHERE agent_id=? AND slot_no=?", (g.user["id"], slot_no)).fetchone()
+    pdf_filename = row["pdf_filename"] if row else None
+    pdf_original_name = row["pdf_original_name"] if row else None
+    saved = _save_report_pdf(request.files.get("pdf"))
+    if saved:
+        _delete_report_pdf(pdf_filename)
+        pdf_filename, pdf_original_name = saved
+    if row:
+        db.execute(
+            "UPDATE kyc_uploads SET client_code=?, pdf_filename=?, pdf_original_name=?, uploaded_at=? WHERE id=?",
+            (client_code, pdf_filename, pdf_original_name, now_iso(), row["id"]),
+        )
+    else:
+        db.execute(
+            "INSERT INTO kyc_uploads (agent_id, slot_no, client_code, pdf_filename, pdf_original_name, uploaded_at) VALUES (?,?,?,?,?,?)",
+            (g.user["id"], slot_no, client_code, pdf_filename, pdf_original_name, now_iso()),
+        )
     db.commit()
-    log_action(g.user, "录入客户", name)
-    flash(f"已录入客户「{name}」，KYC 报告已自动生成", "ok")
+    log_action(g.user, "上传 KYC 报告", f"slot={slot_no}")
+    flash("已保存", "ok")
     return redirect(url_for("agent_clients"))
 
 
-@app.route("/agent/clients/<int:client_id>")
+@app.route("/agent/clients/<int:slot_no>/pdf/remove", methods=["POST"])
 @role_required("agent")
-def agent_client_detail(client_id):
+def agent_kyc_pdf_remove(slot_no):
     db = get_db()
-    client = db.execute("SELECT * FROM clients WHERE id=? AND agent_id=?", (client_id, g.user["id"])).fetchone()
-    if client is None:
+    row = db.execute("SELECT * FROM kyc_uploads WHERE agent_id=? AND slot_no=?", (g.user["id"], slot_no)).fetchone()
+    if row is None:
         abort(404)
-    kyc = db.execute("SELECT * FROM kyc_reports WHERE client_id=?", (client_id,)).fetchone()
-    return render("agent/client_detail.html", client=client, kyc=kyc)
+    _delete_report_pdf(row["pdf_filename"])
+    db.execute("UPDATE kyc_uploads SET pdf_filename=NULL, pdf_original_name=NULL WHERE id=?", (row["id"],))
+    db.commit()
+    log_action(g.user, "移除 KYC 报告", f"slot={slot_no}")
+    flash("已移除已上传的报告", "ok")
+    return redirect(url_for("agent_clients"))
+
+
+@app.route("/agent/clients/<int:slot_no>/pdf")
+@role_required("agent")
+def agent_kyc_pdf(slot_no):
+    row = get_db().execute("SELECT * FROM kyc_uploads WHERE agent_id=? AND slot_no=?", (g.user["id"], slot_no)).fetchone()
+    if row is None:
+        abort(404)
+    return _send_report_pdf(row["pdf_filename"], row["pdf_original_name"])
 
 
 @app.route("/agent/econ", methods=["GET"])
@@ -339,20 +365,21 @@ def agent_econ_submit():
     premium_amount = _non_negative_float("premium_amount")
     fyc_amount = _non_negative_float("fyc_amount")
     referral_count = _non_negative_int("referral_count")
+    client_activity_count = _non_negative_int("client_activity_count")
 
     existing = db.execute("SELECT * FROM econ_updates WHERE period_id=? AND agent_id=?", (current["id"], g.user["id"])).fetchone()
     if existing:
         db.execute(
             """UPDATE econ_updates SET content=?, new_policies_count=?, premium_amount=?, fyc_amount=?,
-               referral_count=?, submitted_at=? WHERE id=?""",
-            (content, new_policies_count, premium_amount, fyc_amount, referral_count, now_iso(), existing["id"]),
+               referral_count=?, client_activity_count=?, submitted_at=? WHERE id=?""",
+            (content, new_policies_count, premium_amount, fyc_amount, referral_count, client_activity_count, now_iso(), existing["id"]),
         )
     else:
         db.execute(
             """INSERT INTO econ_updates
-               (period_id, agent_id, content, new_policies_count, premium_amount, fyc_amount, referral_count, submitted_at)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (current["id"], g.user["id"], content, new_policies_count, premium_amount, fyc_amount, referral_count, now_iso()),
+               (period_id, agent_id, content, new_policies_count, premium_amount, fyc_amount, referral_count, client_activity_count, submitted_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (current["id"], g.user["id"], content, new_policies_count, premium_amount, fyc_amount, referral_count, client_activity_count, now_iso()),
         )
     db.commit()
     log_action(g.user, "提交经营动态", f"第{current['seq']}期")
@@ -748,11 +775,8 @@ def insurer_salon_pdf(session_id, agent_id):
 
 def compute_agent_metrics(db, agent_id):
     """给 AI 生成成长报告用的结构化统计——全部是数字，不含任何客户或文本原文。"""
-    tiers = {"A": 0, "B": 0, "C": 0}
-    for row in db.execute("SELECT tier, COUNT(*) as c FROM clients WHERE agent_id=? GROUP BY tier", (agent_id,)).fetchall():
-        tiers[row["tier"]] = row["c"]
-    kyc_count = db.execute(
-        "SELECT COUNT(*) as c FROM kyc_reports k JOIN clients cl ON cl.id=k.client_id WHERE cl.agent_id=?", (agent_id,)
+    kyc_uploaded = db.execute(
+        "SELECT COUNT(*) as c FROM kyc_uploads WHERE agent_id=? AND pdf_filename IS NOT NULL", (agent_id,)
     ).fetchone()["c"]
     econ_total = db.execute("SELECT COUNT(*) as c FROM econ_periods").fetchone()["c"]
     econ_submitted = db.execute("SELECT COUNT(*) as c FROM econ_updates WHERE agent_id=?", (agent_id,)).fetchone()["c"]
@@ -774,13 +798,13 @@ def compute_agent_metrics(db, agent_id):
     ).fetchone()["c"]
     perf = db.execute(
         """SELECT COALESCE(SUM(new_policies_count),0) as policies, COALESCE(SUM(premium_amount),0) as premium,
-           COALESCE(SUM(fyc_amount),0) as fyc, COALESCE(SUM(referral_count),0) as referrals
+           COALESCE(SUM(fyc_amount),0) as fyc, COALESCE(SUM(referral_count),0) as referrals,
+           COALESCE(SUM(client_activity_count),0) as client_activity
            FROM econ_updates WHERE agent_id=?""",
         (agent_id,),
     ).fetchone()
     return {
-        "tier_a": tiers["A"], "tier_b": tiers["B"], "tier_c": tiers["C"],
-        "kyc_count": kyc_count,
+        "kyc_uploaded": kyc_uploaded,
         "econ_total": econ_total, "econ_submitted": econ_submitted,
         "feedback_count": feedback_count,
         "central_total": central_total, "central_present": central_present,
@@ -788,6 +812,7 @@ def compute_agent_metrics(db, agent_id):
         "salon_total": salon_total, "salon_present": salon_present,
         "policies": perf["policies"], "premium": perf["premium"],
         "fyc": perf["fyc"], "referrals": perf["referrals"],
+        "client_activity": perf["client_activity"],
     }
 
 
@@ -796,25 +821,25 @@ def compute_cohort_maxes(db):
     （验收口径里的成功判据还没定），只能算成「跟同期学员里最高值相比」的相对分，
     不是对绝对目标的完成率——等公司定了具体目标数字，这里可以直接换成目标完成率。"""
     agents = all_agents(db)
-    max_client_raw = max_policies = max_premium = max_fyc = max_referrals = 0
+    max_client_activity = max_policies = max_premium = max_fyc = max_referrals = 0
     for a in agents:
         m = compute_agent_metrics(db, a["id"])
-        client_raw = m["tier_a"] * 3 + m["tier_b"] * 2 + m["tier_c"] * 1
-        max_client_raw = max(max_client_raw, client_raw)
+        max_client_activity = max(max_client_activity, m["client_activity"])
         max_policies = max(max_policies, m["policies"])
         max_premium = max(max_premium, m["premium"])
         max_fyc = max(max_fyc, m["fyc"])
         max_referrals = max(max_referrals, m["referrals"])
     return {
-        "max_client_raw": max_client_raw,
+        "max_client_activity": max_client_activity,
         "max_policies": max_policies, "max_premium": max_premium,
         "max_fyc": max_fyc, "max_referrals": max_referrals,
     }
 
 
 def compute_growth_score_suggestions(db, agent_id):
-    """成长报告四个可计算维度的建议分（0-100），供项目经理/教练参考，不会自动写入已保存的分数。
-    「KYC应用能力」现状下每个客户都会自动生成报告、覆盖率恒为 100%，没有区分度，不给建议分，只能人工评。"""
+    """成长报告五个维度的建议分（0-100），供项目经理/教练参考，不会自动写入已保存的分数。
+    「KYC应用能力」按 5 个锁定 A 类客户的 KYC 报告上传数量算完成率，是绝对目标完成率；
+    「客户经营能力」按双周经营动态里代理人自报的新增/跟进客户数累计值算相对分（跟本期学员最高值比）。"""
     m = compute_agent_metrics(db, agent_id)
     maxes = compute_cohort_maxes(db)
 
@@ -829,8 +854,9 @@ def compute_growth_score_suggestions(db, agent_id):
     econ_rate = (m["econ_submitted"] / m["econ_total"]) if m["econ_total"] else 0
     activity_score = round(100 * (attendance_rate * 0.5 + econ_rate * 0.5))
 
-    client_raw = m["tier_a"] * 3 + m["tier_b"] * 2 + m["tier_c"] * 1
-    client_score = round(100 * client_raw / maxes["max_client_raw"]) if maxes["max_client_raw"] else 0
+    client_score = round(100 * m["client_activity"] / maxes["max_client_activity"]) if maxes["max_client_activity"] else 0
+
+    kyc_score = round(100 * m["kyc_uploaded"] / KYC_SLOT_COUNT)
 
     perf_components = []
     if maxes["max_policies"]:
@@ -845,6 +871,7 @@ def compute_growth_score_suggestions(db, agent_id):
 
     return {
         "客户经营能力": client_score,
+        "KYC应用能力": kyc_score,
         "活动量达成": activity_score,
         "业绩转化能力": perf_score,
         "转介绍开发": referral_score,
@@ -856,13 +883,11 @@ def compute_live_five_dims(db, agent_id):
     顺序固定为：客户经营能力/KYC应用能力/活动量达成/业绩转化能力/转介绍开发，和成长报告口径一致。"""
     suggestions = compute_growth_score_suggestions(db, agent_id)
     m = compute_agent_metrics(db, agent_id)
-    total_clients = m["tier_a"] + m["tier_b"] + m["tier_c"]
-    kyc_score = round(100 * m["kyc_count"] / total_clients) if total_clients else 0
     return [
         {"label": "客户经营能力", "value": suggestions["客户经营能力"],
-         "note": f"A类{m['tier_a']}/B类{m['tier_b']}/C类{m['tier_c']}，跟本期学员最高值比的相对分"},
-        {"label": "KYC应用能力", "value": kyc_score,
-         "note": f"{m['kyc_count']}/{total_clients} 位客户已生成 KYC 报告"},
+         "note": f"双周经营动态累计新增/跟进客户 {m['client_activity']} 人次，跟本期学员最高值比的相对分"},
+        {"label": "KYC应用能力", "value": suggestions["KYC应用能力"],
+         "note": f"{m['kyc_uploaded']}/{KYC_SLOT_COUNT} 位重点客户已上传 KYC 报告，绝对完成率"},
         {"label": "活动量达成", "value": suggestions["活动量达成"],
          "note": "出勤率与经营动态提交率各占一半，真实完成率"},
         {"label": "业绩转化能力", "value": suggestions["业绩转化能力"],
@@ -973,9 +998,8 @@ def compute_final_summary(db):
     top = max(per_agent, key=lambda p: p["overall_attendance"])
     return {
         "agent_count": n,
-        "avg_tier_a": sum(p["metrics"]["tier_a"] for p in per_agent) / n,
-        "avg_tier_b": sum(p["metrics"]["tier_b"] for p in per_agent) / n,
-        "avg_tier_c": sum(p["metrics"]["tier_c"] for p in per_agent) / n,
+        "avg_client_activity": sum(p["metrics"]["client_activity"] for p in per_agent) / n,
+        "avg_kyc_uploaded": sum(p["metrics"]["kyc_uploaded"] for p in per_agent) / n,
         "avg_econ_rate": avg("econ_rate"),
         "avg_feedback_rate": avg("feedback_rate"),
         "avg_central_rate": avg("central_rate"),

@@ -9,11 +9,11 @@
     <form method="post" action="{{ url_for('pm_growth_ai_draft', agent_id=agent.id) }}" style="margin-bottom:10px;">
       <button class="btn btn-sm" type="submit">AI 生成评语草稿（基于系统统计数据，不含客户或经营动态原文）</button>
     </form>
-    <button type="button" class="btn btn-sm" style="margin-bottom:4px;" onclick="fillGrowthSuggestions()">填入系统建议分（客户经营能力/活动量达成/业绩转化能力/转介绍开发）</button>
+    <button type="button" class="btn btn-sm" style="margin-bottom:4px;" onclick="fillGrowthSuggestions()">填入系统建议分（五个维度）</button>
     <p class="block-desc" style="margin:6px 0 16px;">
-      建议分只是参考起点，填入后仍会显示在下面的输入框里，改成任意数字再保存都行；「活动量达成」是真实完成率，
-      其余三项因为公司还没定统一的目标基准数字，是跟本期学员里最高值相比的相对分，不是绝对完成率。
-      「KYC应用能力」现状下每个客户都会自动生成报告、没有区分度，没有建议分，需要人工评。
+      建议分只是参考起点，填入后仍会显示在下面的输入框里，改成任意数字再保存都行。「活动量达成」是出勤率与经营动态
+      提交率的真实完成率；「KYC应用能力」是 5 个锁定 A 类客户的 KYC 报告上传数量占比，也是绝对完成率；
+      「客户经营能力/业绩转化能力/转介绍开发」因为公司还没定统一的目标基准数字，是跟本期学员里最高值相比的相对分，不是绝对完成率。
     </p>
     <form method="post" action="{{ url_for('pm_growth_save', agent_id=agent.id) }}">
       <div class="form-grid">

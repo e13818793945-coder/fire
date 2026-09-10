@@ -76,6 +76,7 @@ def init_db():
     _ensure_column(db, "econ_updates", "premium_amount", "premium_amount REAL NOT NULL DEFAULT 0")
     _ensure_column(db, "econ_updates", "fyc_amount", "fyc_amount REAL NOT NULL DEFAULT 0")
     _ensure_column(db, "econ_updates", "referral_count", "referral_count INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(db, "econ_updates", "client_activity_count", "client_activity_count INTEGER NOT NULL DEFAULT 0")
 
     # 补丁：老库升级到「报告改为上传 PDF」字段（集中辅导会/盘客报告/沙龙陪谈报告）
     _ensure_column(db, "central_sessions", "pdf_filename", "pdf_filename TEXT")
