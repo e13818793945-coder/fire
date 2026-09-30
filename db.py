@@ -97,6 +97,24 @@ def init_db():
             (DEFAULT_ADMIN_USER, generate_password_hash(DEFAULT_ADMIN_PASS), "admin", "系统管理员", now_iso()),
         )
 
+    # 一次性密码重置：COACHING_RESET_PASSWORDS="用户名:新密码,用户名2:新密码2"，用完请删除该环境变量
+    reset_spec = os.environ.get("COACHING_RESET_PASSWORDS", "").strip()
+    if reset_spec:
+        for pair in reset_spec.split(","):
+            if ":" not in pair:
+                continue
+            username, new_pass = pair.split(":", 1)
+            username = username.strip()
+            if not username or not new_pass:
+                continue
+            cur = db.execute(
+                "UPDATE users SET password_hash=? WHERE username=?",
+                (generate_password_hash(new_pass), username),
+            )
+            if cur.rowcount > 0:
+                log_action(None, "环境变量重置密码", username)
+        db.commit()
+
     # 种子：三大权益场次占位（3 场集中辅导 + 6 次盘客辅导 + 3 场沙龙），字段留空待项目经理录入
     if db.execute("SELECT COUNT(*) c FROM central_sessions").fetchone()["c"] == 0:
         for seq in range(1, 4):
